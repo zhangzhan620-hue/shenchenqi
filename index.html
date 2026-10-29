@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>交互生成器 · 教具实验室</title>
+<meta name="description" content="一页集合 7 个可交互的视觉生成器：声动文字、文字坠落、随机文字、海报、渐变、骨架粒子与黑洞。">
+<style>
+  :root{
+    --paper:#f3f0ea;
+    --card:#fffdf9;
+    --ink:#15130f;
+    --muted:#6f685c;
+    --faint:#a89f8f;
+    --line:#dfd8cb;
+    --accent:#ff4d2e;
+    --radius:16px;
+    --sans:"Inter","Helvetica Neue","PingFang SC","Hiragino Sans GB","Microsoft YaHei",Arial,sans-serif;
+    --serif:"Songti SC","STSong","SimSun",Georgia,serif;
+    --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    z-index:0;
+    pointer-events:none;
+    background:
+      repeating-linear-gradient(0deg,transparent 0 39px,rgba(21,19,15,.028) 39px 40px),
+      repeating-linear-gradient(90deg,transparent 0 39px,rgba(21,19,15,.028) 39px 40px);
+    mask-image:radial-gradient(120% 90% at 50% 0%,#000 0%,transparent 85%);
+  }
+
+  .wrap{position:relative;z-index:1;max-width:1260px;margin:0 auto;padding:0 28px 70px}
+
+  /* ---------- 顶栏 ---------- */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:26px 0 0;
+    font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);
+  }
+  .brand{display:flex;align-items:center;gap:9px;color:var(--ink);letter-spacing:.16em}
+  .brand .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(255,77,46,.15)}
+  .topbar .right{display:flex;align-items:center;gap:18px}
+
+  /* ---------- Hero ---------- */
+  .hero{padding:66px 0 30px}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:10px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);
+    margin-bottom:22px;
+  }
+  .eyebrow::before{content:"";width:34px;height:1px;background:var(--ink);opacity:.5}
+  h1.title{
+    margin:0;
+    font-size:clamp(46px,8.4vw,104px);
+    line-height:.92;
+    letter-spacing:-.045em;
+    font-weight:800;
+  }
+  h1.title .accent{color:var(--accent)}
+  h1.title sup{
+    font-family:var(--mono);font-size:.16em;font-weight:500;letter-spacing:.1em;
+    vertical-align:super;color:var(--faint);margin-left:.35em;
+  }
+  .lead{
+    margin:26px 0 0;max-width:640px;
+    font-size:15px;line-height:1.75;color:var(--muted);
+  }
+  .lead b{color:var(--ink);font-weight:600}
+
+  /* ---------- 筛选 ---------- */
+  .toolbar{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-top:34px}
+  .filters{display:flex;gap:8px;flex-wrap:wrap}
+  .filter{
+    appearance:none;cursor:pointer;
+    font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted);background:transparent;
+    border:1px solid var(--line);border-radius:999px;
+    padding:9px 16px;transition:.25s;
+  }
+  .filter:hover{border-color:#bfb5a3;color:var(--ink)}
+  .filter.active{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+  .filter:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  .count{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--faint);text-transform:uppercase}
+
+  /* ---------- 网格 ---------- */
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:22px;
+    margin-top:22px;
+  }
+  .card{
+    position:relative;
+    display:flex;flex-direction:column;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    overflow:hidden;
+    text-decoration:none;color:inherit;
+    transition:transform .4s cubic-bezier(.2,.7,.2,1),box-shadow .4s,border-color .4s;
+    animation:rise .7s cubic-bezier(.2,.7,.2,1) both;
+    animation-delay:calc(var(--i) * 55ms);
+  }
+  @keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+  .card:hover{transform:translateY(-6px);box-shadow:0 30px 60px -30px rgba(35,25,10,.42);border-color:#c9bfae}
+  .card:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+  .card.is-out{display:none}
+
+  /* ---------- 预览区 ---------- */
+  .thumb{
+    position:relative;
+    aspect-ratio:16/10;
+    overflow:hidden;
+    display:grid;place-items:center;
+    isolation:isolate;
+  }
+  .thumb .tag{
+    position:absolute;left:14px;top:13px;z-index:5;
+    font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+    color:rgba(255,255,255,.72);
+    border:1px solid rgba(255,255,255,.22);border-radius:999px;
+    padding:3px 8px;
+    backdrop-filter:blur(4px);
+  }
+  .thumb.on-light .tag{color:rgba(21,19,15,.6);border-color:rgba(21,19,15,.2)}
+
+  /* 声动文字 */
+  .t-sono{background:radial-gradient(120% 110% at 50% 26%,#2a2018 0%,#0c0a08 68%)}
+  .sono-glyph{
+    position:absolute;inset:0;display:grid;place-items:center;
+    font-family:var(--serif);font-size:clamp(64px,10vw,104px);font-weight:700;color:#f8f0e4;
+    text-shadow:0 0 44px rgba(255,91,61,.6),0 0 14px rgba(255,91,61,.42);
+    transform:translateY(-8px);
+  }
+  .sono-wave{position:absolute;left:0;right:0;bottom:26px;width:100%;height:52px;opacity:.92}
+  .sono-wave path{
+    stroke-dasharray:900;stroke-dashoffset:0;
+    transition:stroke-dashoffset 1.4s ease;
+  }
+  .card:hover .sono-wave path{stroke-dashoffset:900}
+
+  /* 文字坠落 */
+  .t-fall{background:linear-gradient(180deg,#1b1612,#0b0908)}
+  .fall-grid{position:absolute;inset:0;overflow:hidden}
+  .fall-grid span{
+    position:absolute;line-height:1;
+    font-family:var(--serif);color:#f2e8d8;
+    text-shadow:0 0 14px rgba(255,190,130,.16);
+    will-change:transform;
+  }
+  .card:hover .fall-grid span{animation:fallLoop var(--dur,3.4s) linear var(--delay,0s) infinite}
+  @keyframes fallLoop{
+    0%{transform:translateY(-14px);opacity:0}
+    18%{opacity:1}
+    100%{transform:translateY(46px);opacity:0}
+  }
+  .t-fall::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(80% 70% at 50% 0%,transparent,rgba(0,0,0,.5));
+  }
+
+  /* 随机文字 */
+  .t-random{background:#eee7da}
+  .char-grid{
+    position:absolute;inset:-4% -3%;
+    display:grid;grid-template-columns:repeat(9,1fr);
+    align-content:center;justify-items:center;
+    padding:8px;
+    font-family:var(--serif);font-size:15px;color:#171410;
+  }
+  .char-grid span{opacity:var(--o,.5);font-weight:var(--w,400);transition:transform .35s,opacity .35s}
+  .card:hover .char-grid span{transform:translateY(-2px)}
+
+  /* 海报 */
+  .t-poster{background:linear-gradient(145deg,#dbd3c4,#c6bcaa)}
+  .poster-sheet{
+    position:relative;
+    height:80%;width:auto;aspect-ratio:3/4;
+    background:#fffefb;
+    box-shadow:0 20px 34px -14px rgba(40,30,15,.45);
+    padding:11px 11px 9px;
+    display:flex;flex-direction:column;justify-content:space-between;
+    transform:rotate(-3.5deg);
+    transition:transform .45s;
+  }
+  .card:hover .poster-sheet{transform:rotate(-1deg) scale(1.02)}
+  .poster-title{
+    font-family:var(--serif);font-weight:700;font-size:clamp(17px,1.9vw,22px);
+    line-height:1.04;letter-spacing:-.02em;color:#131110;
+  }
+  .poster-rules{display:grid;gap:3px;margin:7px 0}
+  .poster-rules i{display:block;height:1px;background:#141210;opacity:.22}
+  .poster-small{font-family:var(--mono);font-size:5.5px;line-height:1.4;letter-spacing:.14em;text-transform:uppercase;color:#6b6255}
+
+  /* 渐变 */
+  .t-gradient{background:#f7f3ea}
+  .gblob{position:absolute;border-radius:50%;filter:blur(24px);will-change:transform}
+  .g1{width:74%;aspect-ratio:1;left:-20%;top:-32%;background:#f04b2f}
+  .g2{width:58%;aspect-ratio:1;right:-14%;top:-16%;background:#f5df3d}
+  .g3{width:92%;aspect-ratio:1;left:4%;bottom:-62%;background:#263ed8}
+  .g-wave{position:absolute;inset:0;width:100%;height:100%}
+  .card:hover .g1{animation:drift 5s ease-in-out infinite alternate}
+  @keyframes drift{to{transform:translate(8%,6%) scale(1.06)}}
+
+  /* 骨架粒子 */
+  .t-skeleton{background:radial-gradient(80% 82% at 50% 44%,#0b1626,#03060b 76%)}
+  .t-skeleton svg{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 0 6px rgba(94,180,239,.45))}
+  .t-skeleton .twinkle{animation:twinkle 3.6s ease-in-out infinite alternate}
+  @keyframes twinkle{from{opacity:.25}to{opacity:.9}}
+
+  /* 黑洞 */
+  .t-blackhole{background:radial-gradient(70% 70% at 50% 50%,#0c0602,#000 72%)}
+  .bh-stars{
+    position:absolute;inset:0;opacity:.7;
+    background-image:
+      radial-gradient(1px 1px at 18% 28%,#fff,transparent),
+      radial-gradient(1px 1px at 72% 18%,#cfe3ff,transparent),
+      radial-gradient(1.5px 1.5px at 84% 62%,#fff,transparent),
+      radial-gradient(1px 1px at 32% 74%,#fff,transparent),
+      radial-gradient(1px 1px at 58% 84%,#d8c8ff,transparent),
+      radial-gradient(1px 1px at 12% 58%,#fff,transparent),
+      radial-gradient(1.5px 1.5px at 46% 12%,#fff,transparent),
+      radial-gradient(1px 1px at 90% 38%,#ffe6c8,transparent);
+  }
+  .bh-ring{
+    position:absolute;left:50%;top:50%;
+    width:min(300px,58%);aspect-ratio:1;border-radius:50%;
+    background:conic-gradient(from 200deg,
+      rgba(255,140,40,0) 0%,
+      #ff7a1a 12%,
+      #ffbf6b 26%,
+      #fff3d6 36%,
+      #ffab48 50%,
+      rgba(255,120,30,.12) 70%,
+      rgba(255,140,40,0) 100%);
+    filter:blur(7px) saturate(1.25);
+    transform:translate(-50%,-50%) rotate(-16deg) scaleY(.34);
+    box-shadow:0 0 70px 12px rgba(255,120,30,.3);
+    animation:pulse 5s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:.85}50%{opacity:1}}
+  .bh-core{
+    position:absolute;left:50%;top:50%;
+    width:min(108px,20%);aspect-ratio:1;border-radius:50%;
+    background:#000;
+    transform:translate(-50%,-50%);
+    box-shadow:0 0 0 1px rgba(255,205,150,.4),0 0 34px 8px rgba(0,0,0,.9) inset,0 0 26px 4px rgba(255,140,50,.14);
+  }
+
+  /* ---------- 文字信息 ---------- */
+  .meta{padding:17px 19px 20px;display:flex;flex-direction:column;gap:10px;flex:1}
+  .meta-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .meta h2{
+    margin:0;font-size:17px;font-weight:700;letter-spacing:-.01em;line-height:1.25;
+    display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;
+  }
+  .meta h2 .en{
+    font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--faint);
+  }
+  .num{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:#c3b9a7;flex:none;margin-top:2px}
+  .meta p{margin:0;font-size:12.5px;line-height:1.68;color:var(--muted)}
+  .meta-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:auto;padding-top:4px}
+  .tags{display:flex;gap:6px;flex-wrap:wrap}
+  .tags span{
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;
+    border:1px solid var(--line);border-radius:999px;
+    padding:3px 9px;color:#8a8172;background:#faf7f1;white-space:nowrap;
+  }
+  .arrow{
+    flex:none;width:30px;height:30px;border-radius:50%;
+    border:1px solid var(--line);background:#fff;
+    display:grid;place-items:center;font-size:14px;line-height:1;
+    transition:.35s;
+  }
+  .card:hover .arrow{background:var(--ink);color:var(--paper);border-color:var(--ink);transform:rotate(-45deg)}
+
+  /* 最后一张：全宽横向 */
+  .card:last-child{grid-column:1/-1;flex-direction:row;align-items:stretch}
+  .card:last-child .thumb{flex:1.45;aspect-ratio:auto;min-height:290px}
+  .card:last-child .meta{flex:1;justify-content:center;padding:38px 44px;gap:14px}
+  .card:last-child .meta h2{font-size:24px;letter-spacing:-.02em}
+  .card:last-child .meta h2 .en{font-size:11px}
+  .card:last-child .meta p{font-size:14px;line-height:1.75;max-width:430px}
+  .card:last-child .meta-foot{margin-top:8px;padding-top:0}
+  .card:last-child .arrow{width:38px;height:38px;font-size:16px}
+
+  /* ---------- 页脚 ---------- */
+  footer{
+    margin-top:56px;padding-top:22px;
+    border-top:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);
+  }
+  footer kbd{
+    font-family:var(--mono);font-size:10px;color:var(--ink);
+    background:#fff;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;
+    padding:1px 5px;
+  }
+
+  /* ---------- 响应式 ---------- */
+  @media (max-width:1040px){
+    .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .card:last-child .meta{padding:28px 30px}
+  }
+  @media (max-width:720px){
+    .wrap{padding:0 18px 48px}
+    .topbar{padding-top:18px}
+    .topbar .right span:first-child{display:none}
+    .hero{padding:44px 0 20px}
+    .lead{font-size:14px}
+    .grid{grid-template-columns:1fr;gap:16px}
+    .card:last-child{grid-column:auto;flex-direction:column}
+    .card:last-child .thumb{aspect-ratio:16/10;min-height:0}
+    .card:last-child .meta{padding:20px 19px;gap:10px}
+    .card:last-child .meta h2{font-size:18px}
+    .card:last-child .meta p{font-size:12.5px}
+    .card:last-child .meta-foot{margin-top:auto}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation:none!important;transition:none!important}
+    html{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand"><span class="dot"></span>交互生成器 / 教具实验室</div>
+    <div class="right">
+      <span>Local Edition</span>
+      <span>07 Generators</span>
+    </div>
+  </div>
+
+  <header class="hero">
+    <div class="eyebrow">Interactive Visual Toolkit</div>
+    <h1 class="title">交互生成器<span class="accent">.</span><sup>07</sup></h1>
+    <p class="lead">
+      一页集合 <b>7 个可交互的视觉教具</b>——声音、文字、粒子与引力。
+      每一件都能实时调整参数、即时看到结果，适合课堂演示与创作实验。
+    </p>
+
+    <div class="toolbar">
+      <div class="filters" role="group" aria-label="筛选生成器">
+        <button class="filter active" data-filter="all" aria-pressed="true">全部</button>
+        <button class="filter" data-filter="type" aria-pressed="false">文字排版</button>
+        <button class="filter" data-filter="art" aria-pressed="false">生成艺术</button>
+      </div>
+      <div class="count" id="count">Showing 07 / 07</div>
+    </div>
+  </header>
+
+  <main class="grid" id="grid">
+
+    <!-- 01 声动文字 -->
+    <a class="card" href="声动文字.html" data-cat="type" style="--i:0">
+      <div class="thumb t-sono">
+        <span class="tag">Audio → Type</span>
+        <div class="sono-glyph">声</div>
+        <svg class="sono-wave" viewBox="0 0 400 80" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 40 L38 40 L58 14 L78 66 L98 26 L118 54 L138 40 L196 40 L216 8 L236 72 L256 30 L276 50 L296 40 L356 40 L378 22 L400 58"
+                fill="none" stroke="#ff5b3d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="meta">
+        <div class="meta-head">
+          <h2>声动文字<span class="en">Sono Script</span></h2>
+          <span class="num">01</span>
+        </div>
+        <p>用声音驱动文字的变形与律动，把音频波形变成可编辑的动态字体海报。</p>
+        <div class="meta-foot">
+          <div class="tags"><span>音频</span><span>动态字体</span></div>
+          <span class="arrow">→</span>
+        </div>
+      </div>
+    </a>
+
+    <!-- 02 文字坠落 -->
+    <a class="card" href="文字坠落生成器.html" data-cat="type" style="--i:1">
+      <div class="thumb t-fall">
+        <span class="tag">Physics Drop</span>
+        <div class="fall-grid" aria-hidden="true"></div>
+      </div>
+      <div class="meta">
+        <div class="meta-head">
+          <h2>文字坠落<span class="en">Type Fall</span></h2>
+          <span class="num">02</span>
+        </div>
+        <p>字符在重力中坠落、堆积、碰撞，用极小规则生成充满随机性的文字画面。</p>
+        <div class="meta-foot">
+          <div class="tags"><span>物理</span><span>随机</span></div>
+          <span class="arrow">→</span>
+        </div>
+      </div>
+    </a>
+
+    <!-- 03 随机文字 -->
+    <a class="card" href="随机文字.html" data-cat="type" style="--i:2">
+      <div class="thumb t-random on-light">
+        <span class="tag">Grid Type</span>
+        <div class="char-grid" aria-hidden="true"></div>
+      </div>
+      <div class="meta">
+        <div class="meta-head">
+          <h2>随机文字<span class="en">Random Text</span></h2>
+          <span class="num">03</span>
+        </div>
+        <p>网格排练加上随机字重与位移，一键生成海报式的文字排版底图。</p>
+        <div class="meta-foot">
+          <div class="tags"><span>网格</span><span>排版</span></div>
+          <span class="arrow">→</span>
+        </div>
+      </div>
+    </a>
+
+    <!-- 04 海报生成器 -->
+    <a class="card" href="海报生成器.html" data-cat="type" style="--i:3">
+      <div class="thumb t-poster on-light">
+        <span class="tag">Poster / GIF</span>
+        <div class="poster-sheet" aria-hidden="true">
+          <div class="poster-title">网格<br>文字</div>
+          <div class="poster-rules"><i></i><i></i><i></i></div>
+          <div class="poster-small">Type&nbsp;/&nbsp;2026<br>Dynamic&nbsp;Layout</div>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="meta-head">
+          <h2>海报生成器<span class="en">Poster</span></h2>
+          <span class="num">04</span>
+        </div>
+        <p>可导出 GIF 与序列帧的网格文字动态排版工具，适合展览海报与封面。</p>
+        <div class="meta-foot">
+          <div class="tags"><span>导出</span><span>GIF</span></div>
+          <span class="arrow">→</span>
+        </div>
+      </div>
+    </a>
+
+    <!-- 05 渐变生成器 -->
+    <a class="card" href="渐变生成器.html" data-cat="art" style="--i:4">
+      <div class="thumb t-gradient on-light">
+        <span class="tag">Canvas Color</span>
+        <div class="gblob g1"></div>
+        <div class="gblob g2"></div>
+        <div class="gblob g3"></div>
+        <svg class="g-wave" viewBox="0 0 400 250" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 150 C 70 108, 148 206, 238 158 S 356 118, 400 148"
+                fill="none" stroke="rgba(255,255,255,.9)" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="meta">
+        <div class="meta-head">
+          <h2>渐变生成器<span class="en">Gradient Boundary</span></h2>
+          <span class="num">05</span>
+        </div>
+        <p>鼠标轨迹成为新的渐变边界，每个区间都会重新生成一套完整的纵向渐变。</p>
+        <div class="meta-foot">
+          <div class="tags"><span>Canvas</span><span>色彩</span></div>
+          <span class="arrow">→</span>
+        </div>
+      </div>
+    </a>
+
+    <!-- 06 骨架粒子 -->
+    <a class="card" href="骨架粒子生成器.html" data-cat="art" style="--i:5">
+      <div class="thumb t-skeleton">
+        <span class="tag">Image → Particles</span>
+        <svg viewBox="0 0 400 250" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <g stroke="#5fb4ef" stroke-width="1.2" opacity=".5" stroke-linecap="round">
+            <line x1="200" y1="52" x2="200" y2="88"/>
+            <line x1="200" y1="88" x2="152" y2="100"/>
+            <line x1="200" y1="88" x2="248" y2="100"/>
+            <line x1="200" y1="88" x2="200" y2="156"/>
+            <line x1="152" y1="100" x2="126" y2="150"/>
+            <line x1="126" y1="150" x2="114" y2="198"/>
+            <line x1="248" y1="100" x2="274" y2="150"/>
+            <line x1="274" y1="150" x2="286" y2="198"/>
+            <line x1="200" y1="156" x2="170" y2="182"/>
+            <line x1="200" y1="156" x2="230" y2="182"/>
+            <line x1="170" y1="182" x2="162" y2="232"/>
+            <line x1="230" y1="182" x2="238" y2="232"/>
+          </g>
+          <g fill="#bfe6ff">
+            <circle cx="200" cy="46" r="7"/>
+            <circle cx="200" cy="88" r="3.4"/>
+            <circle cx="200" cy="156" r="3.4"/>
+            <circle cx="152" cy="100" r="2.8"/>
+            <circle cx="248" cy="100" r="2.8"/>
+            <circle cx="126" cy="150" r="2.6"/>
+            <circle cx="274" cy="150" r="2.6"/>
+            <circle cx="114" cy="198" r="2.6"/>
+            <circle cx="286" cy="198" r="2.6"/>
+            <circle cx="170" cy="182" r="2.8"/>
+            <circle cx="230" cy="182" r="2.8"/>
+            <circle cx="162" cy="232" r="2.4"/>
+            <circle cx="238" cy="232" r="2.4"/>
+          </g>
+          <g class="twinkle" fill="#8fd4ff">
+            <circle cx="60" cy="66" r="1.4"/>
+            <circle cx="338" cy="88" r="1.6"/>
+            <circle cx="92" cy="196" r="1.3"/>
+            <circle cx="316" cy="210" r="1.5"/>
+            <circle cx="40" cy="130" r="1.2"/>
+            <circle cx="360" cy="150" r="1.3"/>
+            <circle cx="70" cy="32" r="1.1"/>
+            <circle cx="330" cy="40" r="1.2"/>
+            <circle cx="180" cy="16" r="1.2"/>
+            <circle cx="250" cy="238" r="1.1"/>
+          </g>
+        </svg>
+      </div>
+      <div class="meta">
+        <div class="meta-head">
+          <h2>骨架粒子<span class="en">Skeleton Particles</span></h2>
+          <span class="num">06</span>
+        </div>
+        <p>上传图片提取轮廓与粒子，生成可交互的发光点阵结构。</p>
+        <div class="meta-foot">
+          <div class="tags"><span>粒子</span><span>图像</span></div>
+          <span class="arrow">→</span>
+        </div>
+      </div>
+    </a>
+
+    <!-- 07 黑洞生成器 -->
+    <a class="card" href="黑洞生成器.html" data-cat="art" style="--i:6">
+      <div class="thumb t-blackhole">
+        <span class="tag">Raytracer</span>
+        <div class="bh-stars" aria-hidden="true"></div>
+        <div class="bh-ring" aria-hidden="true"></div>
+        <div class="bh-core" aria-hidden="true"></div>
+      </div>
+      <div class="meta">
+        <div class="meta-head">
+          <h2>黑洞生成器<span class="en">Gargantua</span></h2>
+          <span class="num">07</span>
+        </div>
+        <p>基于 Schwarzschild 度规的实时黑洞光线追踪，可调节引力透镜、吸积盘与相机视角，把宇宙搬进浏览器。</p>
+        <div class="meta-foot">
+          <div class="tags"><span>WebGL</span><span>物理</span><span>实时渲染</span></div>
+          <span class="arrow">→</span>
+        </div>
+      </div>
+    </a>
+
+  </main>
+
+  <footer>
+    <span>交互生成器 · 教具实验室 — 07 Tools / One Page</span>
+    <span>按 <kbd>1</kbd>–<kbd>7</kbd> 快速打开 · 建议 Chrome / Edge</span>
+  </footer>
+
+</div>
+
+<script>
+  const pool = "网格文字动态排版随机生成器骨架粒子黑洞声动坠落海报渐变交互设计视觉";
+  const rand = (a, b) => a + Math.random() * (b - a);
+
+  document.querySelectorAll(".char-grid").forEach(el => {
+    for (let i = 0; i < 63; i++) {
+      const s = document.createElement("span");
+      s.textContent = pool[Math.floor(Math.random() * pool.length)];
+      s.style.setProperty("--o", rand(.16, 1).toFixed(2));
+      s.style.setProperty("--w", Math.random() > .72 ? 700 : 400);
+      el.appendChild(s);
+    }
+  });
+
+  document.querySelectorAll(".fall-grid").forEach(el => {
+    for (let i = 0; i < 30; i++) {
+      const s = document.createElement("span");
+      s.textContent = pool[Math.floor(Math.random() * pool.length)];
+      s.style.left = rand(2, 92).toFixed(1) + "%";
+      s.style.top = rand(2, 92).toFixed(1) + "%";
+      s.style.fontSize = rand(13, 40).toFixed(0) + "px";
+      s.style.opacity = rand(.16, .95).toFixed(2);
+      s.style.setProperty("--dur", rand(2.2, 5).toFixed(2) + "s");
+      s.style.setProperty("--delay", (-rand(0, 5)).toFixed(2) + "s");
+      el.appendChild(s);
+    }
+  });
+
+  const cards = [...document.querySelectorAll(".card")];
+  const countEl = document.getElementById("count");
+  const pad = n => String(n).padStart(2, "0");
+
+  document.querySelectorAll(".filter").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const f = btn.dataset.filter;
+      document.querySelectorAll(".filter").forEach(b => {
+        const on = b === btn;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", on);
+      });
+      let visible = 0;
+      cards.forEach(c => {
+        const show = f === "all" || c.dataset.cat === f;
+        c.classList.toggle("is-out", !show);
+        if (show) visible++;
+      });
+      countEl.textContent = "Showing " + pad(visible) + " / " + pad(cards.length);
+    });
+  });
+
+  document.addEventListener("keydown", e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (/^[1-7]$/.test(e.key)) {
+      const card = cards[Number(e.key) - 1];
+      if (card) window.location.href = card.getAttribute("href");
+    }
+  });
+</script>
+</body>
+</html>

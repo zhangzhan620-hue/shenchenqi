@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interactive Gradient Boundary Field</title>
+  <style>
+    :root { --bg:#f6f3ed; --panel:#fffdf8; --ink:#121212; --muted:#6d675e; --line:#ded7cb; --soft:rgba(18,18,18,.06); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--ink); background:var(--bg); }
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;background:radial-gradient(circle at 18% 10%,#fff 0,transparent 26rem),linear-gradient(135deg,#eee7dc,#f8f5ef)}
+    main{min-height:100vh;display:grid;grid-template-columns:minmax(310px,390px) minmax(0,1fr);gap:28px;padding:28px}.panel{align-self:start;border:1px solid var(--line);border-radius:8px;background:rgba(255,253,248,.92);backdrop-filter:blur(18px);padding:22px;box-shadow:0 18px 42px rgba(35,27,12,.08)}
+    h1{margin:0 0 5px;font-size:29px;line-height:1;letter-spacing:0}.sub{margin:0 0 20px;color:var(--muted);font-size:13px;line-height:1.5}fieldset{border:0;border-top:1px solid var(--line);margin:18px 0 0;padding:18px 0 0}legend{padding:0 10px 0 0;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+    label{display:grid;gap:7px;margin:0 0 14px;color:var(--muted);font-size:13px}.inline{display:flex;align-items:center;gap:9px}.inline input{width:auto}input,button{font:inherit}input[type="number"]{width:100%;height:38px;border:1px solid var(--line);border-radius:7px;padding:0 10px;background:#fff;color:var(--ink)}input[type="range"]{width:100%;accent-color:var(--ink)}input[type="color"]{width:100%;height:40px;padding:3px;border:1px solid var(--line);border-radius:7px;background:#fff}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.colors{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}button{height:40px;border:1px solid var(--ink);border-radius:7px;background:transparent;color:var(--ink);cursor:pointer;transition:transform .15s ease,background .15s ease}button:hover{transform:translateY(-1px);background:var(--soft)}.primary{grid-column:1/-1;background:var(--ink);color:#fff}
+    .tool-picker{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.tool-picker button{height:44px;border-color:var(--line);font-weight:700}.tool-picker button[aria-pressed="true"]{border-color:var(--ink);background:var(--ink);color:#fff}.tool-help{min-height:34px;margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
+    .stage{min-width:0;display:grid;place-items:center;padding:14px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:linear-gradient(45deg,rgba(0,0,0,.045) 25%,transparent 25%),linear-gradient(-45deg,rgba(0,0,0,.045) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,rgba(0,0,0,.045) 75%),linear-gradient(-45deg,transparent 75%,rgba(0,0,0,.045) 75%);background-size:24px 24px;background-position:0 0,0 12px,12px -12px,-12px 0}.canvas-wrap{width:min(100%,980px);max-height:calc(100vh - 58px);aspect-ratio:2048/1218;display:grid;place-items:center;filter:drop-shadow(0 22px 38px rgba(22,15,5,.18))}canvas{width:100%;height:100%;border-radius:4px;background:#fff;touch-action:none;cursor:crosshair}.meta{margin-top:12px;display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:12px}.hint{margin-top:12px;padding:10px 11px;border-radius:7px;background:var(--soft);color:var(--muted);font-size:12px;line-height:1.45}
+    @media (max-width:880px){main{grid-template-columns:1fr;padding:16px}.stage{min-height:55vh}.canvas-wrap{max-height:none}}
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel" aria-label="渐变生成器控制">
+      <h1>Gradient Boundary</h1>
+      <p class="sub">鼠标轨迹不绘制颜色，而是成为新的渐变边界。每个边界间隔都会重新生成一套完整纵向渐变。</p>
+
+      <fieldset>
+        <legend>Canvas</legend>
+        <div class="grid2">
+          <label>宽度 <input id="width" type="number" min="256" max="4096" value="2048"></label>
+          <label>高度 <input id="height" type="number" min="256" max="4096" value="1218"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Colors</legend>
+        <div class="colors">
+          <label>Top <input id="topColor" type="color" value="#f04b2f"></label>
+          <label>Middle <input id="midColor" type="color" value="#f5df3d"></label>
+          <label>Bottom <input id="bottomColor" type="color" value="#263ed8"></label>
+        </div>
+        <label class="inline"><input id="useMiddle" type="checkbox" checked> 启用中间颜色</label>
+        <label>中间位置 <span id="middleValue">0.50</span><input id="middlePosition" type="range" min="0.02" max="0.98" step="0.01" value="0.50"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Drawing Tool</legend>
+        <div class="tool-picker" role="group" aria-label="绘制工具">
+          <button id="freehandTool" type="button" aria-pressed="true">自由曲线</button>
+          <button id="lineTool" type="button" aria-pressed="false">两点直线</button>
+          <button id="rectangleTool" type="button" aria-pressed="false">矩形</button>
+          <button id="triangleTool" type="button" aria-pressed="false">三角形</button>
+          <button id="circleTool" type="button" aria-pressed="false">圆形</button>
+        </div>
+        <p class="tool-help" id="toolHelp">按住鼠标并拖动，轨迹会跟随鼠标自由绘制。</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Interaction</legend>
+        <label>采样平滑 <span id="smoothValue">18</span><input id="smooth" type="range" min="6" max="80" value="18"></label>
+        <label>边界抗锯齿 <span id="edgeValue">1.2</span><input id="edge" type="range" min="0" max="3" step="0.1" value="1.2"></label>
+        <label>Grain <span id="grainValue">0</span><input id="grain" type="range" min="0" max="80" value="0"></label>
+      </fieldset>
+
+      <div class="actions">
+        <button id="undo" type="button">撤销</button>
+        <button id="reset" type="button">重置</button>
+        <button id="randomize" type="button">随机颜色</button>
+        <button id="clear" type="button">清空轨迹</button>
+        <button id="reference" type="button">参考轨迹</button>
+        <button id="download" class="primary" type="button">导出 PNG</button>
+      </div>
+
+      <div class="meta"><span id="sizeText">2048 x 1218</span><span id="pointText">0 paths / 0 segments</span></div>
+      <div class="hint">测试建议：画水平线、V 形、波浪线、交叉线和两条很近的线。路径会成为锐利折痕，不会出现圆形笔刷痕迹。</div>
+    </section>
+
+    <section class="stage" aria-label="实时预览">
+      <div class="canvas-wrap" id="wrap"><canvas id="canvas" width="2048" height="1218"></canvas></div>
+    </section>
+  </main>
+
+  <script>
+    let MAX_SEGMENTS = 512;
+    const canvas = document.querySelector('#canvas');
+    const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: false });
+    const els = {
+      width: document.querySelector('#width'), height: document.querySelector('#height'), wrap: document.querySelector('#wrap'),
+      topColor: document.querySelector('#topColor'), midColor: document.querySelector('#midColor'), bottomColor: document.querySelector('#bottomColor'),
+      useMiddle: document.querySelector('#useMiddle'), middlePosition: document.querySelector('#middlePosition'), middleValue: document.querySelector('#middleValue'),
+      smooth: document.querySelector('#smooth'), edge: document.querySelector('#edge'), grain: document.querySelector('#grain'),
+      smoothValue: document.querySelector('#smoothValue'), edgeValue: document.querySelector('#edgeValue'), grainValue: document.querySelector('#grainValue'),
+      sizeText: document.querySelector('#sizeText'), pointText: document.querySelector('#pointText'),
+      freehandTool: document.querySelector('#freehandTool'), lineTool: document.querySelector('#lineTool'),
+      rectangleTool: document.querySelector('#rectangleTool'), triangleTool: document.querySelector('#triangleTool'), circleTool: document.querySelector('#circleTool'),
+      toolHelp: document.querySelector('#toolHelp')
+    };
+
+    if (!gl) {
+      document.querySelector('#pointText').textContent = 'WebGL unavailable';
+      throw new Error('WebGL is required for this generator.');
+    }
+    MAX_SEGMENTS = Math.max(64, Math.min(512, gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) - 24));
+
+    const vertexSource = `
+      attribute vec2 a_position;
+      varying vec2 v_uv;
+      void main() {
+        v_uv = a_position * 0.5 + 0.5;
+        gl_Position = vec4(a_position, 0.0, 1.0);
+      }
+    `;
+
+    const fragmentSource = `
+      precision highp float;
+      const int MAX_SEGMENTS = ${MAX_SEGMENTS};
+      varying vec2 v_uv;
+      uniform vec2 u_resolution;
+      uniform int u_segmentCount;
+      uniform vec4 u_segments[MAX_SEGMENTS];
+      uniform vec3 u_topColor;
+      uniform vec3 u_middleColor;
+      uniform vec3 u_bottomColor;
+      uniform bool u_useMiddle;
+      uniform float u_middlePosition;
+      uniform float u_edge;
+      uniform float u_grain;
+
+      float random(vec2 p) {
+        return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453123);
+      }
+
+      vec3 mixThree(float t) {
+        if (!u_useMiddle) return mix(u_topColor, u_bottomColor, t);
+        float m = clamp(u_middlePosition, 0.02, 0.98);
+        if (t <= m) return mix(u_topColor, u_middleColor, clamp(t / m, 0.0, 1.0));
+        return mix(u_middleColor, u_bottomColor, clamp((t - m) / (1.0 - m), 0.0, 1.0));
+      }
+
+      void main() {
+        vec2 p = vec2(v_uv.x * u_resolution.x, (1.0 - v_uv.y) * u_resolution.y);
+        float upper = 0.0;
+        float lower = u_resolution.y;
+        float crease = 0.0;
+
+        for (int i = 0; i < MAX_SEGMENTS; i++) {
+          if (i >= u_segmentCount) break;
+          vec4 seg = u_segments[i];
+          vec2 a = seg.xy;
+          vec2 b = seg.zw;
+          float dx = b.x - a.x;
+          float minX = min(a.x, b.x) - 0.75;
+          float maxX = max(a.x, b.x) + 0.75;
+          if (p.x < minX || p.x > maxX) continue;
+
+          float yOnLine;
+          if (abs(dx) < 0.001) {
+            if (abs(p.x - a.x) > 0.75) continue;
+            yOnLine = clamp(p.y, min(a.y, b.y), max(a.y, b.y));
+          } else {
+            float f = clamp((p.x - a.x) / dx, 0.0, 1.0);
+            yOnLine = mix(a.y, b.y, f);
+          }
+
+          float dist = abs(p.y - yOnLine);
+          crease = max(crease, 1.0 - smoothstep(0.0, max(0.001, u_edge), dist));
+          if (yOnLine <= p.y && yOnLine > upper) upper = yOnLine;
+          if (yOnLine >= p.y && yOnLine < lower) lower = yOnLine;
+        }
+
+        float topDistance = max(0.0, p.y - upper);
+        float bottomDistance = max(0.0, lower - p.y);
+        float denom = max(topDistance + bottomDistance, 0.0001);
+        float t = clamp(topDistance / denom, 0.0, 1.0);
+        if (u_grain > 0.0) t = clamp(t + (random(p) - 0.5) * u_grain * 0.0018, 0.0, 1.0);
+        vec3 color = mixThree(t);
+        color = mix(color, mixThree(step(0.5, t)), crease * 0.18);
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `;
+
+    function compile(type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+      return shader;
+    }
+
+    function createProgram() {
+      const program = gl.createProgram();
+      gl.attachShader(program, compile(gl.VERTEX_SHADER, vertexSource));
+      gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragmentSource));
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+      return program;
+    }
+
+    const program = createProgram();
+    const locations = {
+      position: gl.getAttribLocation(program, 'a_position'), resolution: gl.getUniformLocation(program, 'u_resolution'),
+      segmentCount: gl.getUniformLocation(program, 'u_segmentCount'), segments: gl.getUniformLocation(program, 'u_segments'),
+      topColor: gl.getUniformLocation(program, 'u_topColor'), middleColor: gl.getUniformLocation(program, 'u_middleColor'), bottomColor: gl.getUniformLocation(program, 'u_bottomColor'),
+      useMiddle: gl.getUniformLocation(program, 'u_useMiddle'), middlePosition: gl.getUniformLocation(program, 'u_middlePosition'), edge: gl.getUniformLocation(program, 'u_edge'), grain: gl.getUniformLocation(program, 'u_grain')
+    };
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+
+    const paths = [];
+    let currentPath = null;
+    let drawingTool = 'freehand';
+    let lineStart = null;
+    let shapeStart = null;
+    let queued = false;
+    let lastWidth = Number(els.width.value);
+    let lastHeight = Number(els.height.value);
+
+    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+    function hexToRgb(hex) { const raw = hex.replace('#', ''); return [parseInt(raw.slice(0, 2), 16) / 255, parseInt(raw.slice(2, 4), 16) / 255, parseInt(raw.slice(4, 6), 16) / 255]; }
+    function getState() { return { width: clamp(Number(els.width.value) || 2048, 256, 4096), height: clamp(Number(els.height.value) || 1218, 256, 4096), smooth: Number(els.smooth.value), edge: Number(els.edge.value), grain: Number(els.grain.value), middle: Number(els.middlePosition.value) }; }
+
+    function flattenSegments() {
+      const data = new Float32Array(MAX_SEGMENTS * 4);
+      const rawTotal = paths.reduce((sum, path) => sum + Math.max(0, path.length - 1), 0);
+      const active = currentPath || paths[paths.length - 1] || null;
+      const activeSegments = active ? Math.max(0, active.length - 1) : 0;
+      const reserved = Math.min(MAX_SEGMENTS, Math.max(96, Math.min(activeSegments + 48, Math.floor(MAX_SEGMENTS * 0.45))));
+      const oldBudget = Math.max(0, MAX_SEGMENTS - reserved);
+      const oldTotal = Math.max(0, rawTotal - activeSegments);
+      const oldStride = oldBudget > 0 ? Math.max(1, Math.ceil(oldTotal / oldBudget)) : Infinity;
+      let oldSeen = 0;
+      let count = 0;
+
+      function write(a, b) {
+        if (count >= MAX_SEGMENTS) return;
+        data[count * 4] = a.x;
+        data[count * 4 + 1] = a.y;
+        data[count * 4 + 2] = b.x;
+        data[count * 4 + 3] = b.y;
+        count++;
+      }
+
+      for (const path of paths) {
+        if (path === active) continue;
+        for (let i = 1; i < path.length; i++) {
+          if (oldSeen % oldStride === 0) write(path[i - 1], path[i]);
+          oldSeen++;
+        }
+      }
+      if (active) {
+        const activeStart = Math.max(1, active.length - reserved);
+        for (let i = activeStart; i < active.length; i++) write(active[i - 1], active[i]);
+      }
+      return { data, count, total: rawTotal, clipped: Math.max(0, rawTotal - count) };
+    }
+
+    function scalePaths(newW, newH) {
+      if (newW === lastWidth && newH === lastHeight) return;
+      const sx = newW / lastWidth;
+      const sy = newH / lastHeight;
+      for (const path of paths) for (const p of path) { p.x *= sx; p.y *= sy; }
+      lastWidth = newW;
+      lastHeight = newH;
+    }
+
+    function render() {
+      const s = getState();
+      scalePaths(s.width, s.height);
+      if (canvas.width !== s.width || canvas.height !== s.height) { canvas.width = s.width; canvas.height = s.height; }
+      els.wrap.style.aspectRatio = `${s.width} / ${s.height}`;
+      els.sizeText.textContent = `${s.width} x ${s.height}`;
+      els.smoothValue.textContent = s.smooth;
+      els.edgeValue.textContent = s.edge.toFixed(1);
+      els.grainValue.textContent = s.grain;
+      els.middleValue.textContent = s.middle.toFixed(2);
+
+      const flattened = flattenSegments();
+      els.pointText.textContent = flattened.clipped ? `${paths.length} paths / ${flattened.count} shown of ${flattened.total} segments` : `${paths.length} paths / ${flattened.count} segments`;
+      gl.viewport(0, 0, s.width, s.height);
+      gl.useProgram(program);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.enableVertexAttribArray(locations.position);
+      gl.vertexAttribPointer(locations.position, 2, gl.FLOAT, false, 0, 0);
+      gl.uniform2f(locations.resolution, s.width, s.height);
+      gl.uniform1i(locations.segmentCount, flattened.count);
+      gl.uniform4fv(locations.segments, flattened.data);
+      gl.uniform3fv(locations.topColor, hexToRgb(els.topColor.value));
+      gl.uniform3fv(locations.middleColor, hexToRgb(els.midColor.value));
+      gl.uniform3fv(locations.bottomColor, hexToRgb(els.bottomColor.value));
+      gl.uniform1i(locations.useMiddle, els.useMiddle.checked ? 1 : 0);
+      gl.uniform1f(locations.middlePosition, s.middle);
+      gl.uniform1f(locations.edge, s.edge);
+      gl.uniform1f(locations.grain, s.grain);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      queued = false;
+    }
+
+    function queueRender() { if (!queued) { queued = true; requestAnimationFrame(render); } }
+    function pointerToCanvas(e) { const r = canvas.getBoundingClientRect(); const s = getState(); return { x: (e.clientX - r.left) / r.width * s.width, y: (e.clientY - r.top) / r.height * s.height }; }
+    function appendPoint(p) {
+      const s = getState();
+      const last = currentPath[currentPath.length - 1];
+      const step = Math.max(4, s.smooth);
+      if (!last) { currentPath.push(p); return; }
+      const dx = p.x - last.x, dy = p.y - last.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1.5) return;
+      const pieces = Math.max(1, Math.ceil(dist / step));
+      for (let i = 1; i <= pieces; i++) currentPath.push({ x: last.x + dx * i / pieces, y: last.y + dy * i / pieces });
+    }
+
+    const shapeTools = new Set(['rectangle', 'triangle', 'circle']);
+    const toolHelpText = {
+      freehand: '按住鼠标并拖动，轨迹会跟随鼠标自由绘制。',
+      line: '点击确定起点，移动鼠标预览，再点击一次确定终点。按 Esc 可取消。',
+      rectangle: '从一个角按下并拖到对角，松开完成矩形。按住 Shift 可绘制正方形。',
+      triangle: '从中心按下并向外拖动，方向决定顶点朝向，松开完成三角形。',
+      circle: '从一个角按下并拖到对角，松开完成椭圆。按住 Shift 可绘制正圆。'
+    };
+
+    function cancelPendingDrawing() {
+      if (!lineStart && !shapeStart) return;
+      if (currentPath && paths[paths.length - 1] === currentPath) paths.pop();
+      lineStart = null;
+      shapeStart = null;
+      currentPath = null;
+      els.toolHelp.textContent = '已取消当前图形。可在画布上重新开始。';
+      queueRender();
+    }
+
+    function setDrawingTool(tool) {
+      if (drawingTool === tool) return;
+      cancelPendingDrawing();
+      drawingTool = tool;
+      ['freehand', 'line', 'rectangle', 'triangle', 'circle'].forEach(name => {
+        els[`${name}Tool`].setAttribute('aria-pressed', name === tool);
+      });
+      els.toolHelp.textContent = toolHelpText[tool];
+    }
+
+    function updateShapePath(tool, start, end, constrain) {
+      let dx = end.x - start.x;
+      let dy = end.y - start.y;
+      if (constrain && tool !== 'triangle') {
+        const size = Math.max(Math.abs(dx), Math.abs(dy));
+        dx = Math.sign(dx || 1) * size;
+        dy = Math.sign(dy || 1) * size;
+        end = { x: start.x + dx, y: start.y + dy };
+      }
+      if (tool === 'rectangle') {
+        currentPath.splice(0, currentPath.length,
+          { x: start.x, y: start.y }, { x: end.x, y: start.y },
+          { x: end.x, y: end.y }, { x: start.x, y: end.y }, { x: start.x, y: start.y });
+      } else if (tool === 'triangle') {
+        const radius = Math.hypot(dx, dy);
+        const angle = Math.atan2(dy, dx);
+        const points = [];
+        for (let i = 0; i < 3; i++) {
+          const a = angle + i * Math.PI * 2 / 3;
+          points.push({ x: start.x + Math.cos(a) * radius, y: start.y + Math.sin(a) * radius });
+        }
+        points.push({ ...points[0] });
+        currentPath.splice(0, currentPath.length, ...points);
+      } else if (tool === 'circle') {
+        const cx = (start.x + end.x) / 2;
+        const cy = (start.y + end.y) / 2;
+        const rx = Math.abs(end.x - start.x) / 2;
+        const ry = Math.abs(end.y - start.y) / 2;
+        const points = [];
+        const steps = 72;
+        for (let i = 0; i <= steps; i++) {
+          const a = i / steps * Math.PI * 2;
+          points.push({ x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry });
+        }
+        currentPath.splice(0, currentPath.length, ...points);
+      }
+    }
+
+    els.freehandTool.addEventListener('click', () => setDrawingTool('freehand'));
+    els.lineTool.addEventListener('click', () => setDrawingTool('line'));
+    els.rectangleTool.addEventListener('click', () => setDrawingTool('rectangle'));
+    els.triangleTool.addEventListener('click', () => setDrawingTool('triangle'));
+    els.circleTool.addEventListener('click', () => setDrawingTool('circle'));
+
+    canvas.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      const p = pointerToCanvas(e);
+      if (drawingTool === 'line') {
+        if (!lineStart) {
+          lineStart = p;
+          currentPath = [p, { ...p }];
+          paths.push(currentPath);
+          els.toolHelp.textContent = '起点已确定：移动鼠标预览，点击确定终点。按 Esc 可取消。';
+        } else {
+          currentPath[1] = p;
+          lineStart = null;
+          currentPath = null;
+          els.toolHelp.textContent = '直线已完成。点击画布可开始下一条直线。';
+        }
+        queueRender();
+        return;
+      }
+      canvas.setPointerCapture(e.pointerId);
+      currentPath = [];
+      paths.push(currentPath);
+      if (shapeTools.has(drawingTool)) {
+        shapeStart = p;
+        updateShapePath(drawingTool, shapeStart, p, e.shiftKey);
+      } else {
+        appendPoint(p);
+      }
+      queueRender();
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (drawingTool === 'line') {
+        if (lineStart && currentPath) { currentPath[1] = pointerToCanvas(e); queueRender(); }
+        return;
+      }
+      if (!currentPath) return;
+      e.preventDefault();
+      if (shapeStart) updateShapePath(drawingTool, shapeStart, pointerToCanvas(e), e.shiftKey);
+      else appendPoint(pointerToCanvas(e));
+      queueRender();
+    });
+    canvas.addEventListener('pointerup', e => {
+      if (drawingTool === 'line') return;
+      if (shapeStart && currentPath) {
+        const end = pointerToCanvas(e);
+        if (Math.hypot(end.x - shapeStart.x, end.y - shapeStart.y) < 2) paths.pop();
+        else updateShapePath(drawingTool, shapeStart, end, e.shiftKey);
+      } else if (currentPath && currentPath.length < 2) paths.pop();
+      shapeStart = null;
+      currentPath = null;
+      try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      queueRender();
+    });
+    canvas.addEventListener('pointercancel', e => {
+      if (lineStart || shapeStart) { cancelPendingDrawing(); return; }
+      currentPath = null;
+      try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      queueRender();
+    });
+    window.addEventListener('keydown', e => { if (e.key === 'Escape') cancelPendingDrawing(); });
+
+    ['topColor', 'midColor', 'bottomColor', 'useMiddle', 'middlePosition', 'smooth', 'edge', 'grain'].forEach(id => els[id].addEventListener('input', queueRender));
+    ['width', 'height'].forEach(id => els[id].addEventListener('change', queueRender));
+    document.querySelector('#undo').addEventListener('click', () => { paths.pop(); currentPath = null; lineStart = null; shapeStart = null; queueRender(); });
+    document.querySelector('#clear').addEventListener('click', () => { paths.length = 0; currentPath = null; lineStart = null; shapeStart = null; queueRender(); });
+    document.querySelector('#reset').addEventListener('click', () => { els.width.value = 2048; els.height.value = 1218; els.topColor.value = '#f04b2f'; els.midColor.value = '#f5df3d'; els.bottomColor.value = '#263ed8'; els.useMiddle.checked = true; els.middlePosition.value = 0.5; els.smooth.value = 18; els.edge.value = 1.2; els.grain.value = 0; paths.length = 0; currentPath = null; lineStart = null; shapeStart = null; lastWidth = 2048; lastHeight = 1218; setDrawingTool('freehand'); queueRender(); });
+    document.querySelector('#randomize').addEventListener('click', () => { const palette = ['#f04b2f', '#f5df3d', '#263ed8', '#ff6b35', '#ffe15a', '#3155ff', '#f7f7f2']; const pick = () => palette[Math.floor(Math.random() * palette.length)]; els.topColor.value = pick(); els.midColor.value = pick(); els.bottomColor.value = pick(); queueRender(); });
+    document.querySelector('#reference').addEventListener('click', () => { const s = getState(); paths.length = 0; lineStart = null; shapeStart = null; const make = (base, amp, phase, cycles) => { const path = []; for (let i = 0; i < 180; i++) { const t = i / 179; path.push({ x: s.width * (0.08 + 0.84 * t), y: s.height * (base + Math.sin(t * Math.PI * cycles + phase) * amp) }); } paths.push(path); }; make(.34, .09, .2, 5.5); make(.52, .13, 1.4, 6.5); make(.68, .08, 2.6, 4.5); currentPath = null; queueRender(); });
+    function canvasFromWebGL() {
+      const w = canvas.width;
+      const h = canvas.height;
+      const pixels = new Uint8Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      const out = document.createElement('canvas');
+      out.width = w;
+      out.height = h;
+      const outCtx = out.getContext('2d');
+      const imageData = outCtx.createImageData(w, h);
+      const row = w * 4;
+      for (let y = 0; y < h; y++) {
+        const src = (h - 1 - y) * row;
+        const dst = y * row;
+        imageData.data.set(pixels.subarray(src, src + row), dst);
+      }
+      outCtx.putImageData(imageData, 0, 0);
+      return out;
+    }
+
+    function triggerDownload(url, filename) {
+      const a = document.createElement('a');
+      a.download = filename;
+      a.href = url;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    function exposeDownloadLink(url, filename) {
+      els.pointText.innerHTML = '';
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.textContent = 'PNG 已生成，点击保存';
+      link.style.color = '#121212';
+      link.style.textDecoration = 'underline';
+      els.pointText.appendChild(link);
+    }
+
+    function downloadPng() {
+      render();
+      gl.finish();
+      const filename = `gradient-boundary-${canvas.width}x${canvas.height}.png`;
+      const exportCanvas = canvasFromWebGL();
+      if (exportCanvas.toBlob) {
+        exportCanvas.toBlob(blob => {
+          if (!blob) {
+            const dataUrl = exportCanvas.toDataURL('image/png');
+            triggerDownload(dataUrl, filename);
+            exposeDownloadLink(dataUrl, filename);
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          triggerDownload(url, filename);
+          exposeDownloadLink(url, filename);
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+        }, 'image/png');
+      } else {
+        const dataUrl = exportCanvas.toDataURL('image/png');
+        triggerDownload(dataUrl, filename);
+        exposeDownloadLink(dataUrl, filename);
+      }
+    }
+
+    document.querySelector('#download').addEventListener('click', downloadPng);
+
+    queueRender();
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+
+

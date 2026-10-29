@@ -1,0 +1,962 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sono Script 1.0 - 声动文字生成器</title>
+  <style>
+    :root {
+      --panel: rgba(12, 17, 31, 0.92);
+      --panel-border: rgba(255, 255, 255, 0.12);
+      --text: #f4f7ff;
+      --muted: #8f9bb3;
+      --accent: #5f7cff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #050505;
+      color: var(--text);
+      font-family: Inter, "Microsoft YaHei", Arial, sans-serif;
+    }
+
+    #stage {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+
+    .panel {
+      position: fixed;
+      left: 18px;
+      top: 18px;
+      z-index: 10;
+      width: 292px;
+      max-height: calc(100vh - 36px);
+      overflow-y: auto;
+      padding: 14px;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+      backdrop-filter: blur(14px);
+      scrollbar-width: thin;
+    }
+
+    .panel::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .panel::-webkit-scrollbar-thumb {
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    .field {
+      display: grid;
+      grid-template-columns: 82px 1fr 52px;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 9px;
+      font-size: 12px;
+    }
+
+    .field label {
+      color: #d8deeb;
+      white-space: nowrap;
+    }
+
+    .field output {
+      padding: 3px 5px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.07);
+      color: #dfe6ff;
+      font-family: "Consolas", monospace;
+      font-size: 11px;
+      text-align: right;
+    }
+
+    textarea,
+    select,
+    input[type="number"] {
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 5px;
+      outline: none;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      font-family: inherit;
+    }
+
+    textarea {
+      grid-column: 1 / -1;
+      min-height: 78px;
+      padding: 8px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    select {
+      grid-column: 2 / -1;
+      height: 28px;
+      padding: 0 7px;
+      background: #111827;
+      color: #ffffff;
+    }
+
+    select option {
+      background: #111827;
+      color: #ffffff;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: #8c9cff;
+    }
+
+    input[type="color"] {
+      grid-column: 2 / 3;
+      width: 100%;
+      height: 27px;
+      padding: 1px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 4px;
+      background: transparent;
+    }
+
+    .color-code {
+      padding: 4px 5px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.07);
+      font-family: "Consolas", monospace;
+      font-size: 11px;
+      text-transform: lowercase;
+    }
+
+    .button-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 7px;
+      margin-top: 12px;
+    }
+
+    button {
+      height: 31px;
+      border: 0;
+      border-radius: 5px;
+      background: #d9deea;
+      color: #151923;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      background: #ffffff;
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    #micButton {
+      background: var(--accent);
+      color: white;
+    }
+
+    #micButton.active,
+    #audioButton.active {
+      background: #20a66a;
+    }
+
+    #recordButton.recording {
+      background: #ff4d5e;
+      color: white;
+    }
+
+    .status {
+      min-height: 18px;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .recorder {
+      position: fixed;
+      left: 18px;
+      bottom: 18px;
+      z-index: 11;
+      display: grid;
+      grid-template-columns: 72px 1fr 42px;
+      gap: 8px;
+      align-items: center;
+      width: 260px;
+      padding: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 8px;
+      background: rgba(105, 135, 255, 0.78);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+      font-size: 12px;
+    }
+
+    .recorder strong {
+      font-size: 13px;
+    }
+
+    .recorder select,
+    .recorder input {
+      height: 26px;
+      padding: 0 7px;
+      background: rgba(8, 12, 28, 0.72);
+    }
+
+    .record-dot {
+      grid-row: 1 / 3;
+      grid-column: 3;
+      width: 34px;
+      height: 34px;
+      border: 4px solid white;
+      border-radius: 50%;
+      background: #f10d32;
+      box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.12);
+    }
+
+    .record-dot.recording {
+      animation: pulse 1s infinite;
+    }
+
+    .brand {
+      position: fixed;
+      right: 22px;
+      bottom: 18px;
+      z-index: 9;
+      color: rgba(255, 255, 255, 0.52);
+      font-family: "Consolas", monospace;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      pointer-events: none;
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.24);
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        transform: scale(1);
+      }
+      50% {
+        transform: scale(0.78);
+      }
+    }
+
+    @media (max-width: 680px) {
+      .panel {
+        left: 10px;
+        top: 10px;
+        width: calc(100vw - 20px);
+        max-height: 48vh;
+      }
+
+      .recorder {
+        left: 10px;
+        bottom: 10px;
+        width: calc(100vw - 20px);
+      }
+
+      .brand {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <section class="panel" aria-label="声动文字控制面板">
+    <div class="field">
+      <label for="textInput">文本（使用 / 换行）</label>
+      <textarea id="textInput" spellcheck="false">让创意落地/让美感发声/BRING CREATIVITY TO LIFE/LET BEAUTY SPEAK</textarea>
+    </div>
+
+    <div class="field">
+      <label for="fontSize">字体大小</label>
+      <input id="fontSize" type="range" min="48" max="320" step="1" value="100">
+      <output id="fontSizeValue">100</output>
+    </div>
+
+    <div class="field">
+      <label for="letterSpacing">字间距</label>
+      <input id="letterSpacing" type="range" min="-20" max="48" step="0.1" value="2.6">
+      <output id="letterSpacingValue">2.60</output>
+    </div>
+
+    <div class="field">
+      <label for="lineHeight">行高</label>
+      <input id="lineHeight" type="range" min="0.72" max="1.7" step="0.01" value="1.06">
+      <output id="lineHeightValue">1.06</output>
+    </div>
+
+    <div class="field">
+      <label for="layers">层数</label>
+      <input id="layers" type="range" min="1" max="40" step="1" value="13">
+      <output id="layersValue">13</output>
+    </div>
+
+    <div class="field">
+      <label for="textColor">字体颜色</label>
+      <input id="textColor" type="color" value="#efffff">
+      <span id="textColorCode" class="color-code">#efffff</span>
+    </div>
+
+    <div class="field">
+      <label for="bgColor">背景颜色</label>
+      <input id="bgColor" type="color" value="#4300ff">
+      <span id="bgColorCode" class="color-code">#4300ff</span>
+    </div>
+
+    <div class="field">
+      <label for="minMove">最小移动量</label>
+      <input id="minMove" type="range" min="0" max="120" step="0.1" value="0">
+      <output id="minMoveValue">0.00</output>
+    </div>
+
+    <div class="field">
+      <label for="maxMove">最大移动量</label>
+      <input id="maxMove" type="range" min="0" max="300" step="0.1" value="28">
+      <output id="maxMoveValue">28.00</output>
+    </div>
+
+    <div class="field">
+      <label for="motionMode">动态模式</label>
+      <select id="motionMode">
+        <option value="wave">波浪形</option>
+        <option value="free" selected>自由形态</option>
+        <option value="noise">噪音抖动</option>
+        <option value="pulse">径向脉冲</option>
+        <option value="slice">切片错位</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="blendMode">混合模式</label>
+      <select id="blendMode">
+        <option value="difference" selected>差值</option>
+        <option value="source-over">正常</option>
+        <option value="overlay">叠加</option>
+        <option value="screen">滤色</option>
+        <option value="exclusion">排除</option>
+        <option value="lighter">线性减淡</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="fontFamily">字体</label>
+      <select id="fontFamily">
+        <option value="'OPPOSans', 'Microsoft YaHei', sans-serif" selected>OPPOSans</option>
+        <option value="'Microsoft YaHei', 'PingFang SC', sans-serif">思源黑体</option>
+        <option value="'SimSun', 'Noto Serif SC', serif">中易宋体</option>
+        <option value="'KaiTi', 'STKaiti', cursive">楷体</option>
+        <option value="'Arial Black', Arial, sans-serif">Arial Black</option>
+        <option value="Georgia, 'Times New Roman', serif">Georgia</option>
+      </select>
+    </div>
+
+    <div class="button-grid">
+      <button id="micButton" type="button">开启麦克风</button>
+      <button id="audioButton" type="button">上传音频</button>
+      <button id="clearAudioButton" type="button">清除音频</button>
+      <button id="pauseButton" type="button">暂停</button>
+      <button id="exportButton" type="button">导出 PNG</button>
+      <button id="recordButton" type="button">录制 WebM</button>
+    </div>
+    <input id="audioFileInput" type="file" accept="audio/*" hidden>
+
+    <div id="status" class="status">未开启麦克风，正在使用演示节奏</div>
+  </section>
+
+  <section class="recorder" aria-label="录制设置">
+    <strong>format</strong>
+    <select id="format">
+      <option value="webm" selected>WebM</option>
+    </select>
+    <button id="recordDot" class="record-dot" type="button" aria-label="录制"></button>
+    <strong>framerate</strong>
+    <input id="frameRate" type="number" min="12" max="60" step="1" value="30">
+  </section>
+
+  <div class="brand">Sono Script 1.0 / Audio Reactive Type</div>
+  <a id="downloadLink" hidden></a>
+
+  <script>
+    const canvas = document.getElementById('stage');
+    const ctx = canvas.getContext('2d');
+    const sprite = document.createElement('canvas');
+    const spriteCtx = sprite.getContext('2d');
+    const downloadLink = document.getElementById('downloadLink');
+    const statusEl = document.getElementById('status');
+    const micButton = document.getElementById('micButton');
+    const audioButton = document.getElementById('audioButton');
+    const clearAudioButton = document.getElementById('clearAudioButton');
+    const audioFileInput = document.getElementById('audioFileInput');
+    const pauseButton = document.getElementById('pauseButton');
+    const exportButton = document.getElementById('exportButton');
+    const recordButton = document.getElementById('recordButton');
+    const recordDot = document.getElementById('recordDot');
+    const frameRateInput = document.getElementById('frameRate');
+
+    const controls = {
+      text: document.getElementById('textInput'),
+      fontSize: document.getElementById('fontSize'),
+      letterSpacing: document.getElementById('letterSpacing'),
+      lineHeight: document.getElementById('lineHeight'),
+      layers: document.getElementById('layers'),
+      textColor: document.getElementById('textColor'),
+      bgColor: document.getElementById('bgColor'),
+      minMove: document.getElementById('minMove'),
+      maxMove: document.getElementById('maxMove'),
+      motionMode: document.getElementById('motionMode'),
+      blendMode: document.getElementById('blendMode'),
+      fontFamily: document.getElementById('fontFamily')
+    };
+
+    let settings = {};
+    let viewWidth = window.innerWidth;
+    let viewHeight = window.innerHeight;
+    let audioContext = null;
+    let analyser = null;
+    let microphoneStream = null;
+    let microphoneSource = null;
+    let audioElement = null;
+    let audioElementSource = null;
+    let audioObjectUrl = null;
+    let activeAudioSource = null;
+    let recordingAudioDestination = null;
+    let audioMode = 'demo';
+    let timeData = null;
+    let frequencyData = null;
+    let audioLevel = 0.28;
+    let demoBands = new Array(24).fill(0.28);
+    let frequencyBands = new Array(24).fill(0.28);
+    let runningTime = 0;
+    let lastFrameTime = performance.now();
+    let paused = false;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let recording = false;
+
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function lerp(start, end, amount) {
+      return start + (end - start) * amount;
+    }
+
+    function random(seed) {
+      return Math.abs(Math.sin(seed * 12.9898) * 43758.5453) % 1;
+    }
+
+    function readSettings() {
+      settings = {
+        text: controls.text.value || 'Sono Script',
+        fontSize: Number(controls.fontSize.value),
+        letterSpacing: Number(controls.letterSpacing.value),
+        lineHeight: Number(controls.lineHeight.value),
+        layers: Number(controls.layers.value),
+        textColor: controls.textColor.value,
+        bgColor: controls.bgColor.value,
+        minMove: Number(controls.minMove.value),
+        maxMove: Number(controls.maxMove.value),
+        motionMode: controls.motionMode.value,
+        blendMode: controls.blendMode.value,
+        fontFamily: controls.fontFamily.value
+      };
+    }
+
+    function updateOutputs() {
+      document.getElementById('fontSizeValue').value = settings.fontSize.toFixed(0);
+      document.getElementById('letterSpacingValue').value = settings.letterSpacing.toFixed(2);
+      document.getElementById('lineHeightValue').value = settings.lineHeight.toFixed(2);
+      document.getElementById('layersValue').value = settings.layers.toFixed(0);
+      document.getElementById('minMoveValue').value = settings.minMove.toFixed(2);
+      document.getElementById('maxMoveValue').value = settings.maxMove.toFixed(2);
+      document.getElementById('textColorCode').textContent = settings.textColor;
+      document.getElementById('bgColorCode').textContent = settings.bgColor;
+    }
+
+    function isEnglishLine(line) {
+      return /^[\x20-\x7E]+$/.test(line);
+    }
+
+    function lineFontSize(line) {
+      return settings.fontSize * (isEnglishLine(line) ? 0.64 : 1.12);
+    }
+
+    function lineSpacing(line) {
+      return settings.letterSpacing * (isEnglishLine(line) ? 0.55 : 1);
+    }
+
+    function measureLine(line) {
+      const chars = Array.from(line);
+      const spacing = lineSpacing(line);
+      if (!chars.length) return 0;
+      spriteCtx.font = `800 ${lineFontSize(line)}px ${settings.fontFamily}`;
+      let width = 0;
+      for (const char of chars) {
+        width += spriteCtx.measureText(char).width + spacing;
+      }
+      return Math.max(0, width - spacing);
+    }
+
+    function rebuildSprite() {
+      readSettings();
+      updateOutputs();
+      const lines = settings.text.split('/').map(line => line.trimEnd());
+      const metrics = lines.map(line => {
+        const size = lineFontSize(line);
+        return {
+          line,
+          size,
+          spacing: lineSpacing(line),
+          width: measureLine(line),
+          advance: size * settings.lineHeight,
+          strokeWidth: clamp(size * 0.026, 2, 8)
+        };
+      });
+      const textWidth = Math.max(1, ...metrics.map(item => item.width));
+      const textHeight = Math.max(1, metrics.reduce((sum, item) => sum + item.advance, 0));
+      const maxSize = Math.max(settings.fontSize, ...metrics.map(item => item.size));
+      const maxStroke = Math.max(2, ...metrics.map(item => item.strokeWidth));
+      const padding = Math.ceil(maxSize * 0.18 + maxStroke) + 8;
+      sprite.width = Math.ceil(textWidth + padding * 2);
+      sprite.height = Math.ceil(textHeight + padding * 2);
+      spriteCtx.clearRect(0, 0, sprite.width, sprite.height);
+      spriteCtx.textBaseline = 'middle';
+      spriteCtx.textAlign = 'left';
+      spriteCtx.strokeStyle = settings.textColor;
+      spriteCtx.lineJoin = 'round';
+      spriteCtx.miterLimit = 2;
+      let y = padding;
+      metrics.forEach(item => {
+        const chars = Array.from(item.line);
+        let x = padding + (textWidth - item.width) / 2;
+        const centerY = y + item.advance / 2;
+        spriteCtx.font = `800 ${item.size}px ${settings.fontFamily}`;
+        spriteCtx.lineWidth = item.strokeWidth;
+        for (const char of chars) {
+          spriteCtx.strokeText(char, x, centerY);
+          x += spriteCtx.measureText(char).width + item.spacing;
+        }
+        y += item.advance;
+      });
+    }
+
+    function resizeCanvas() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      viewWidth = window.innerWidth;
+      viewHeight = window.innerHeight;
+      canvas.width = Math.floor(viewWidth * dpr);
+      canvas.height = Math.floor(viewHeight * dpr);
+      canvas.style.width = `${viewWidth}px`;
+      canvas.style.height = `${viewHeight}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function updateAudio() {
+      let target = 0;
+      if (analyser) {
+        analyser.getByteTimeDomainData(timeData);
+        analyser.getByteFrequencyData(frequencyData);
+        let sum = 0;
+        for (let i = 0; i < timeData.length; i += 1) {
+          const value = (timeData[i] - 128) / 128;
+          sum += value * value;
+        }
+        const rms = Math.sqrt(sum / timeData.length);
+        target = clamp(rms * 4.2, 0, 1);
+        for (let i = 0; i < frequencyBands.length; i += 1) {
+          const start = Math.floor(Math.pow(i / frequencyBands.length, 1.45) * frequencyData.length * 0.72);
+          const end = Math.max(start + 1, Math.floor(Math.pow((i + 1) / frequencyBands.length, 1.45) * frequencyData.length * 0.72));
+          let bandSum = 0;
+          for (let j = start; j < end; j += 1) bandSum += frequencyData[j];
+          const value = clamp((bandSum / (end - start)) / 190, 0, 1);
+          frequencyBands[i] = lerp(frequencyBands[i], value, value > frequencyBands[i] ? 0.34 : 0.12);
+        }
+      } else {
+        const slowBeat = Math.pow(Math.max(0, Math.sin(runningTime * 2.15)), 2);
+        const quickBeat = Math.pow(Math.max(0, Math.sin(runningTime * 6.2 + 1.4)), 8);
+        target = clamp(0.16 + slowBeat * 0.58 + quickBeat * 0.28, 0, 1);
+        for (let i = 0; i < demoBands.length; i += 1) {
+          const phase = runningTime * (1.2 + i * 0.035) + i * 0.73;
+          const value = clamp(0.35 + Math.sin(phase) * 0.32 + Math.sin(phase * 2.7) * 0.2 + target * 0.28, 0, 1);
+          demoBands[i] = lerp(demoBands[i], value, 0.18);
+        }
+      }
+      audioLevel = lerp(audioLevel, target, target > audioLevel ? 0.32 : 0.1);
+    }
+
+    function bandAt(position) {
+      const source = analyser ? frequencyBands : demoBands;
+      const index = clamp(Math.floor(position * source.length), 0, source.length - 1);
+      return source[index];
+    }
+
+    function drawSpriteLayer(dx, dy, scale, layerPosition) {
+      const centerX = viewWidth > 720 ? viewWidth * 0.61 : viewWidth * 0.5;
+      const centerY = viewHeight * 0.5;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.translate(Math.round(centerX + dx), Math.round(centerY + dy));
+      ctx.scale(scale, scale);
+      const spriteX = Math.round(-sprite.width / 2);
+      const spriteY = Math.round(-sprite.height / 2);
+      if (settings.motionMode === 'free') {
+        const columns = 9;
+        const rows = 9;
+        const signal = clamp(audioLevel * 0.65 + bandAt(layerPosition) * 0.7, 0, 1);
+        const strength = settings.fontSize * 0.1 * signal;
+        for (let row = 0; row < rows; row += 1) {
+          const sourceY = Math.floor(row * sprite.height / rows);
+          const nextY = Math.floor((row + 1) * sprite.height / rows);
+          const cellHeight = nextY - sourceY;
+          for (let column = 0; column < columns; column += 1) {
+            const sourceX = Math.floor(column * sprite.width / columns);
+            const nextX = Math.floor((column + 1) * sprite.width / columns);
+            const cellWidth = nextX - sourceX;
+            const seed = layerPosition * 97 + row * 17 + column * 7;
+            const waveX = Math.sin(runningTime * 2.6 + row * 0.72 + layerPosition * 8.3);
+            const waveY = Math.cos(runningTime * 2.1 + column * 0.81 + layerPosition * 6.7);
+            const offsetX = Math.round(((random(seed) - 0.5) * 0.9 + waveX * 0.55) * strength);
+            const offsetY = Math.round(((random(seed + 3.1) - 0.5) * 0.9 + waveY * 0.55) * strength);
+            const destWidth = Math.max(1, Math.round(cellWidth * (1 + (random(seed + 5.7) - 0.5) * 0.1 * signal)));
+            const destHeight = Math.max(1, Math.round(cellHeight * (1 + (random(seed + 8.9) - 0.5) * 0.1 * signal)));
+            ctx.drawImage(sprite, sourceX, sourceY, cellWidth, cellHeight, spriteX + sourceX + offsetX, spriteY + sourceY + offsetY, destWidth, destHeight);
+          }
+        }
+      } else if (settings.motionMode === 'slice') {
+        const sliceHeight = Math.max(5, Math.floor(settings.fontSize / 13));
+        const amplitude = displacementForLayer(layerPosition);
+        for (let y = 0; y < sprite.height; y += sliceHeight) {
+          const strip = Math.floor(y / sliceHeight);
+          const direction = strip % 2 === 0 ? 1 : -1;
+          const local = Math.sin(runningTime * 5.2 + strip * 1.42 + layerPosition * 9.1);
+          const offset = Math.round(direction * local * amplitude * (0.25 + layerPosition));
+          const height = Math.min(sliceHeight, sprite.height - y);
+          ctx.drawImage(sprite, 0, y, sprite.width, height, spriteX + offset, spriteY + y, sprite.width, height);
+        }
+      } else {
+        ctx.drawImage(sprite, spriteX, spriteY);
+      }
+      ctx.restore();
+    }
+
+    function displacementForLayer(position) {
+      const range = Math.max(0, settings.maxMove - settings.minMove);
+      const band = bandAt(position);
+      const signal = clamp(audioLevel * 0.58 + band * 0.58, 0, 1);
+      return settings.minMove + range * signal;
+    }
+
+    function drawFrame() {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = settings.bgColor;
+      ctx.fillRect(0, 0, viewWidth, viewHeight);
+      ctx.globalCompositeOperation = settings.blendMode;
+
+      for (let i = 0; i < settings.layers; i += 1) {
+        const position = settings.layers === 1 ? 1 : i / (settings.layers - 1);
+        const amplitude = displacementForLayer(position);
+        let dx = 0;
+        let dy = 0;
+        let scale = 1;
+
+        if (settings.motionMode === 'wave') {
+          dx = Math.sin(runningTime * 1.9 + position * 5.7) * amplitude * position;
+          dy = Math.cos(runningTime * 1.35 + position * 4.3) * amplitude * 0.44 * position;
+        } else if (settings.motionMode === 'free') {
+          const signal = clamp(audioLevel * 0.65 + bandAt(position) * 0.7, 0, 1);
+          dx = (random(i + 2.43) - 0.5) * amplitude * 0.72 * position;
+          dy = (random(i + 6.19) - 0.5) * amplitude * 0.72 * position;
+          scale = 1 + (random(i + 9.87) - 0.5) * 0.1 * signal;
+        } else if (settings.motionMode === 'noise') {
+          const rx = random(i + 1.31) - 0.5;
+          const ry = random(i + 8.17) - 0.5;
+          dx = (rx * 2 + Math.sin(runningTime * 4.1 + i) * 0.22) * amplitude * position;
+          dy = (ry * 2 + Math.cos(runningTime * 3.6 + i * 0.7) * 0.22) * amplitude * position;
+        } else if (settings.motionMode === 'pulse') {
+          const angle = position * Math.PI * 2 + runningTime * 0.82;
+          dx = Math.cos(angle) * amplitude * 0.72 * position;
+          dy = Math.sin(angle) * amplitude * 0.48 * position;
+          scale = 1 + audioLevel * 0.11 * position;
+        } else if (settings.motionMode === 'slice') {
+          dy = Math.sin(runningTime * 1.3 + position * Math.PI) * amplitude * 0.08 * position;
+        }
+
+        ctx.globalAlpha = 1;
+        drawSpriteLayer(Math.round(dx), Math.round(dy), scale, position);
+      }
+
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    function animate(now) {
+      const delta = Math.min(0.05, (now - lastFrameTime) / 1000);
+      lastFrameTime = now;
+      if (!paused) {
+        runningTime += delta;
+        updateAudio();
+      }
+      drawFrame();
+      requestAnimationFrame(animate);
+    }
+
+    async function ensureAudioGraph() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.72;
+        recordingAudioDestination = audioContext.createMediaStreamDestination();
+        timeData = new Uint8Array(analyser.fftSize);
+        frequencyData = new Uint8Array(analyser.frequencyBinCount);
+      }
+      await audioContext.resume();
+    }
+
+    function connectAudioSource(source, mode) {
+      if (activeAudioSource) activeAudioSource.disconnect();
+      activeAudioSource = source;
+      activeAudioSource.connect(analyser);
+      activeAudioSource.connect(recordingAudioDestination);
+      if (mode === 'file') activeAudioSource.connect(audioContext.destination);
+      audioMode = mode;
+    }
+
+    function stopMicrophone() {
+      if (microphoneStream) {
+        microphoneStream.getTracks().forEach(track => track.stop());
+        microphoneStream = null;
+      }
+      if (microphoneSource) {
+        microphoneSource.disconnect();
+        if (activeAudioSource === microphoneSource) activeAudioSource = null;
+        microphoneSource = null;
+      }
+      micButton.textContent = '开启麦克风';
+      micButton.classList.remove('active');
+    }
+
+    function releaseUploadedAudio() {
+      if (audioElement) audioElement.pause();
+      if (audioElementSource) {
+        audioElementSource.disconnect();
+        if (activeAudioSource === audioElementSource) activeAudioSource = null;
+      }
+      if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl);
+      audioElement = null;
+      audioElementSource = null;
+      audioObjectUrl = null;
+    }
+
+    function clearUploadedAudio() {
+      releaseUploadedAudio();
+      audioButton.textContent = '上传音频';
+      audioButton.classList.remove('active');
+      if (audioMode === 'file') audioMode = 'demo';
+      statusEl.textContent = currentAudioStatus();
+    }
+
+    function currentAudioStatus() {
+      if (audioMode === 'mic') return '正在根据设备捕捉的声韵律动';
+      if (audioMode === 'file' && audioElement) return audioElement.paused ? '音频已暂停' : `正在播放音频：${audioElement.dataset.name}`;
+      return '未开启麦克风，正在使用演示节奏';
+    }
+
+    async function enableMicrophone() {
+      try {
+        await ensureAudioGraph();
+        if (audioElement) {
+          audioElement.pause();
+          audioButton.textContent = '继续音频';
+        }
+        stopMicrophone();
+        microphoneStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: true
+          }
+        });
+        microphoneSource = audioContext.createMediaStreamSource(microphoneStream);
+        connectAudioSource(microphoneSource, 'mic');
+        micButton.textContent = '麦克风已开启';
+        micButton.classList.add('active');
+        statusEl.textContent = currentAudioStatus();
+      } catch (error) {
+        statusEl.textContent = '麦克风不可用，正在使用演示节奏';
+      }
+    }
+
+    async function loadAudioFile(file) {
+      if (!file) return;
+      try {
+        await ensureAudioGraph();
+        stopMicrophone();
+        releaseUploadedAudio();
+        audioObjectUrl = URL.createObjectURL(file);
+        audioElement = new Audio(audioObjectUrl);
+        audioElement.dataset.name = file.name;
+        audioElement.loop = true;
+        audioElement.preload = 'auto';
+        audioElementSource = audioContext.createMediaElementSource(audioElement);
+        connectAudioSource(audioElementSource, 'file');
+        audioButton.classList.add('active');
+        try {
+          await audioElement.play();
+          audioButton.textContent = '暂停音频';
+        } catch (error) {
+          audioButton.textContent = '播放音频';
+        }
+        statusEl.textContent = currentAudioStatus();
+      } catch (error) {
+        statusEl.textContent = '音频加载失败，请更换文件';
+      } finally {
+        audioFileInput.value = '';
+      }
+    }
+
+    async function toggleUploadedAudio() {
+      if (!audioElement) {
+        audioFileInput.click();
+        return;
+      }
+      await ensureAudioGraph();
+      if (audioElement.paused) {
+        stopMicrophone();
+        connectAudioSource(audioElementSource, 'file');
+        await audioElement.play();
+        audioButton.textContent = '暂停音频';
+      } else {
+        audioElement.pause();
+        audioButton.textContent = '继续音频';
+      }
+      statusEl.textContent = currentAudioStatus();
+    }
+
+    function exportPng() {
+      canvas.toBlob(blob => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        downloadLink.href = url;
+        downloadLink.download = `sono-script-${Date.now()}.png`;
+        downloadLink.click();
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    }
+
+    function recorderMimeType() {
+      const candidates = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
+      ];
+      return candidates.find(type => MediaRecorder.isTypeSupported(type)) || '';
+    }
+
+    function startRecording() {
+      const fps = clamp(Number(frameRateInput.value) || 30, 12, 60);
+      const canvasStream = canvas.captureStream(fps);
+      const tracks = [...canvasStream.getVideoTracks()];
+      if (recordingAudioDestination) tracks.push(...recordingAudioDestination.stream.getAudioTracks());
+      const stream = new MediaStream(tracks);
+      const mimeType = recorderMimeType();
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond: 9000000,
+        audioBitsPerSecond: 128000
+      });
+      mediaRecorder.ondataavailable = event => {
+        if (event.data && event.data.size) recordedChunks.push(event.data);
+      };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: mimeType || 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        downloadLink.href = url;
+        downloadLink.download = `sono-script-${Date.now()}.webm`;
+        downloadLink.click();
+        URL.revokeObjectURL(url);
+      };
+      mediaRecorder.start(250);
+      recording = true;
+      recordButton.textContent = '停止并下载';
+      recordButton.classList.add('recording');
+      recordDot.classList.add('recording');
+      statusEl.textContent = `正在录制 WebM · ${fps}fps`;
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+      recording = false;
+      recordButton.textContent = '录制 WebM';
+      recordButton.classList.remove('recording');
+      recordDot.classList.remove('recording');
+      statusEl.textContent = currentAudioStatus();
+    }
+
+    function toggleRecording() {
+      if (recording) stopRecording();
+      else startRecording();
+    }
+
+    function togglePause() {
+      paused = !paused;
+      pauseButton.textContent = paused ? '继续' : '暂停';
+    }
+
+    Object.values(controls).forEach(control => {
+      control.addEventListener('input', rebuildSprite);
+      control.addEventListener('change', rebuildSprite);
+    });
+
+    micButton.addEventListener('click', enableMicrophone);
+    audioButton.addEventListener('click', toggleUploadedAudio);
+    clearAudioButton.addEventListener('click', clearUploadedAudio);
+    audioFileInput.addEventListener('change', event => loadAudioFile(event.target.files[0]));
+    pauseButton.addEventListener('click', togglePause);
+    exportButton.addEventListener('click', exportPng);
+    recordButton.addEventListener('click', toggleRecording);
+    recordDot.addEventListener('click', toggleRecording);
+    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('keydown', event => {
+      if (event.target.matches('input, textarea, select')) return;
+      if (event.code === 'Space') {
+        event.preventDefault();
+        togglePause();
+      } else if (event.key.toLowerCase() === 'p') {
+        exportPng();
+      } else if (event.key.toLowerCase() === 'r') {
+        toggleRecording();
+      }
+    });
+
+    resizeCanvas();
+    rebuildSprite();
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>

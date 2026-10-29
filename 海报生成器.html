@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>网格文字动态排版工具</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { height:100%; font-family:"Helvetica Neue","PingFang SC","Microsoft YaHei",Arial,sans-serif; }
+  body { display:flex; background:#e8e6e1; overflow:hidden; }
+  #panel { width:330px; min-width:330px; height:100vh; overflow-y:auto; background:#f4f4f4; border-right:1px solid #ddd; padding:14px 14px 60px; }
+  #panel h1 { font-size:15px; margin-bottom:10px; font-weight:700; }
+  .sec { background:#fff; border:1px solid #e2e2e2; border-radius:8px; margin-bottom:12px; padding:10px 12px 12px; }
+  .sec-title { font-size:12.5px; font-weight:700; color:#333; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid #eee; }
+  .row { display:flex; align-items:center; justify-content:space-between; margin:7px 0; font-size:12px; color:#444; }
+  .row label { flex:1; padding-right:8px; }
+  .row .val { width:52px; text-align:right; color:#888; font-variant-numeric:tabular-nums; }
+  input[type=range] { flex:1.2; accent-color:#2f6bff; height:18px; }
+  input[type=checkbox] { width:16px; height:16px; accent-color:#2f6bff; }
+  input[type=color] { width:42px; height:24px; border:1px solid #ccc; border-radius:4px; background:#fff; padding:1px; }
+  input[type=text], select, textarea { width:100%; font-size:12px; border:1px solid #ccc; border-radius:5px; padding:5px 7px; background:#fff; font-family:inherit; }
+  textarea { resize:vertical; line-height:1.5; }
+  select { width:auto; min-width:120px; }
+  .btns { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  button { font-size:12px; padding:6px 12px; border:1px solid #ccc; border-radius:5px; background:#fff; cursor:pointer; }
+  button:hover { background:#f0f0f0; }
+  button.primary { background:#2f6bff; color:#fff; border-color:#2f6bff; }
+  button.primary:hover { background:#2458d6; }
+  button:disabled { opacity:.5; cursor:default; }
+  #stage { flex:1; display:flex; align-items:center; justify-content:center; padding:26px; position:relative; }
+  #paperWrap { position:relative; box-shadow:0 6px 40px rgba(0,0,0,.18); background:#fff; }
+  canvas { display:block; }
+  #bar { position:absolute; left:50%; transform:translateX(-50%); bottom:14px; width:min(760px,80%); background:#fff; border:1px solid #ddd; border-radius:8px; padding:8px 12px; display:flex; align-items:center; gap:10px; font-size:11.5px; color:#555; }
+  #bar .infoL { flex:1; }
+  #bar .infoR { color:#999; }
+  #timeline { flex:2.2; }
+  #toast { position:fixed; top:16px; left:50%; transform:translateX(-50%); background:#222; color:#fff; font-size:12.5px; padding:9px 18px; border-radius:6px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:99; }
+  .hint { font-size:11px; color:#999; margin-top:4px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div id="panel"><h1>网格文字动态排版工具</h1></div>
+<div id="stage">
+  <div id="paperWrap"><canvas id="cv"></canvas></div>
+  <div id="bar">
+    <button id="btnPlay" style="min-width:34px">⏸</button>
+    <button id="btnRestart">回到开头</button>
+    <input type="range" id="timeline" min="0" max="1000" value="0">
+    <span class="infoL" id="infoL"></span>
+    <span class="infoR" id="infoR"></span>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+const DEFAULT_TEXT = "19 DLAB Design Studio specializes in digital art exhibitions, commercial spaces, and other playful digital artworks. Using creative coding technologies such as Processing, Three.js, and p5.js, we provide distinctive visual solutions for brand design and marketing, art contexts, creating engaging and interactive experiences, coding development.";
+
+const W_REF = 1080, H_REF = 1440;
+
+const FONT_OPTIONS = [
+  ["'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif", "黑体 / Sans"],
+  ["Georgia, 'Times New Roman', 'Songti SC', SimSun, serif", "衬线 / Serif"],
+  ["'Courier New', Courier, monospace", "等宽 / Mono"],
+  ["Impact, 'Arial Black', sans-serif", "标题粗体 / Impact"],
+];
+
+const SECTIONS = [
+  { title: "文字内容", items: [
+    { id:"text", type:"textarea", label:"文字内容（中英文混合）", rows:5, value:DEFAULT_TEXT },
+    { id:"fontFile", type:"file", label:"上传字体文件", accept:".ttf,.otf,.woff,.woff2" },
+    { id:"imgFile", type:"images", label:"上传图片（可多选）" },
+    { id:"imgSize", type:"range", label:"图片尺寸", min:40, max:400, step:1, value:160, unit:"PX" },
+    { id:"imgCount", type:"range", label:"图片数量", min:0, max:30, step:1, value:4 },
+    { id:"imgRand", type:"range", label:"随机大小", min:0, max:100, step:1, value:50, unit:"%" },
+    { id:"fontFamily", type:"select", label:"字体", options:FONT_OPTIONS },
+    { id:"fontWeight", type:"select", label:"字重", options:[["700","粗体"],["400","常规"],["300","细体"]] },
+    { id:"baseSize", type:"range", label:"基础字号", min:12, max:120, step:1, value:44, unit:"PX" },
+    { id:"sizeVar", type:"range", label:"字号层级变化", min:0, max:100, step:1, value:18, unit:"%" },
+    { id:"italic", type:"check", label:"斜体", value:false },
+  ]},
+  { title: "网格与构图", items: [
+    { id:"gridCols", type:"range", label:"网格列数", min:2, max:30, step:1, value:14 },
+    { id:"gridRows", type:"range", label:"网格行数", min:2, max:40, step:1, value:22 },
+    { id:"loose", type:"range", label:"段落松紧", min:0, max:100, step:1, value:50, unit:"%" },
+    { id:"midStates", type:"range", label:"中间状态", min:0, max:8, step:1, value:4 },
+    { id:"shape", type:"select", label:"目标形状", options:[["random","随机组合"],["wide","横向展开"],["tall","纵向收拢"],["ring","环形散布"]] },
+    { id:"blockCount", type:"range", label:"矩形数量", min:0, max:40, step:1, value:14 },
+    { id:"blockRole", type:"select", label:"矩形角色", options:[["mix","随机混合"],["back","置于文字后"],["front","遮挡文字"]] },
+    { id:"seedRow", type:"seed", label:"随机种子" },
+  ]},
+  { title: "动态参数", items: [
+    { id:"cycle", type:"range", label:"循环时长", min:2, max:40, step:0.1, value:12.8, unit:"S" },
+    { id:"hold", type:"range", label:"状态停留", min:0, max:90, step:1, value:29, unit:"%" },
+    { id:"curve", type:"range", label:"运动弯曲", min:0, max:100, step:1, value:42, unit:"%" },
+    { id:"shrink", type:"range", label:"过渡收缩 / 避让", min:0, max:100, step:1, value:58, unit:"%" },
+  ]},
+  { title: "文字结构效果（默认全部关闭）", items: [
+    { id:"fxOn", type:"check", label:"启用效果模块", value:false },
+    { id:"box", type:"check", label:"每个文字增加文字框", value:false },
+    { id:"boxFill", type:"check", label:"填充文字框", value:false },
+    { id:"boxFillColor", type:"color", label:"文字框填充颜色", value:"#000000" },
+    { id:"trail", type:"check", label:"连续文字拖影", value:false },
+    { id:"trailN", type:"range", label:"拖影数量", min:1, max:30, step:1, value:7 },
+    { id:"trailStep", type:"range", label:"拖影停留时间", min:0.05, max:3, step:0.05, value:1, unit:"S" },
+    { id:"trailOp", type:"range", label:"拖影透明度", min:0, max:100, step:1, value:100, unit:"%" },
+    { id:"holdKeep", type:"range", label:"透明度保持", min:0, max:100, step:1, value:100, unit:"%" },
+    { id:"holdKeepNote", type:"note", text:"100% 时停留期间不减弱，到期直接消失" },
+    { id:"trailColor", type:"color", label:"拖影颜色", value:"#000000" },
+    { id:"link", type:"check", label:"阅读顺序连线", value:false },
+    { id:"hull", type:"check", label:"无填充双线轮廓", value:false },
+    { id:"structColor", type:"color", label:"结构线条颜色", value:"#000000" },
+    { id:"structLW", type:"range", label:"结构线宽", min:0.5, max:5, step:0.1, value:1.2, unit:"PX" },
+    { id:"boxPad", type:"range", label:"文字框留白", min:0, max:30, step:1, value:5, unit:"PX" },
+    { id:"hullGap", type:"range", label:"双线轮廓间距", min:0, max:40, step:1, value:8, unit:"PX" },
+  ]},
+  { title: "颜色与质感", items: [
+    { id:"bg", type:"color", label:"背景颜色", value:"#ffffff" },
+    { id:"fg", type:"color", label:"文字颜色", value:"#111111" },
+    { id:"blockColor", type:"color", label:"矩形颜色", value:"#000000" },
+    { id:"hideBlocks", type:"check", label:"隐藏矩形色块", value:false },
+    { id:"onBlock", type:"color", label:"块上文字", value:"#ffffff" },
+    { id:"autoContrast", type:"check", label:"自动文字反差", value:true },
+    { id:"grain", type:"range", label:"纸面颗粒", min:0, max:100, step:1, value:16, unit:"%" },
+  ]},
+  { title: "导出", items: [
+    { id:"expW", type:"num", label:"导出宽度", value:1080 },
+    { id:"expH", type:"num", label:"导出高度", value:1440 },
+    { id:"export", type:"export" },
+  ]},
+];
+
+const LAYOUT_KEYS = ["text","baseSize","sizeVar","italic","fontFamily","fontWeight","gridCols","gridRows","loose","midStates","shape","blockCount","blockRole","seed","imgSize","imgCount","imgRand"];
+
+const params = {};
+const els = {};
+let segments = [];
+let blocks = [];
+let userImages = [];
+let imgVer = 0;
+let layoutSig = "";
+let timeSec = 0;
+let playing = true;
+let lastTs = null;
+let grainPattern = null;
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const panel = document.getElementById("panel");
+const infoL = document.getElementById("infoL");
+const infoR = document.getElementById("infoR");
+const timeline = document.getElementById("timeline");
+
+function toast(msg, ms=2600){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.style.opacity = 1;
+  clearTimeout(t._tm); t._tm = setTimeout(()=> t.style.opacity = 0, ms);
+}
+
+function randSeed(){
+  const ch = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+  let s = ""; for(let i=0;i<7;i++) s += ch[Math.floor(Math.random()*ch.length)];
+  return s;
+}
+
+function hashSeed(str){
+  let h = 2166136261 >>> 0;
+  for(const c of String(str)){ h ^= c.codePointAt(0); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function buildPanel(){
+  for(const sec of SECTIONS){
+    const box = document.createElement("div"); box.className = "sec";
+    const tt = document.createElement("div"); tt.className = "sec-title"; tt.textContent = sec.title;
+    box.appendChild(tt);
+    for(const it of sec.items){
+      if(it.type === "note"){
+        const note = document.createElement("div"); note.className = "hint"; note.textContent = it.text;
+        box.appendChild(note);
+        continue;
+      }
+      if(it.type === "export"){
+        const hint = document.createElement("div");
+        hint.className = "hint";
+        hint.textContent = "MOV 依赖浏览器支持，多数浏览器将回退为 MP4/WebM；PNG 序列为逐帧 ZIP 包。";
+        const row = document.createElement("div"); row.className = "btns";
+        const defs = [["PNG","png"],["SVG","svg"],["GIF","gif"],["MP4","mp4"],["MOV","mov"],["PNG 序列","seq"]];
+        for(const [label,key] of defs){
+          const b = document.createElement("button");
+          b.textContent = label; b.dataset.exp = key;
+          b.onclick = ()=> doExport(key, b);
+          row.appendChild(b);
+        }
+        box.appendChild(row); box.appendChild(hint);
+        continue;
+      }
+      if(it.type === "seed"){
+        const row = document.createElement("div"); row.className = "row";
+        const lb = document.createElement("label"); lb.textContent = it.label;
+        const inp = document.createElement("input"); inp.type = "text"; inp.style.width = "90px"; inp.style.flex = "none";
+        inp.value = randSeed();
+        const b = document.createElement("button"); b.textContent = "换一组"; b.style.marginLeft = "6px";
+        b.onclick = ()=>{ inp.value = randSeed(); onParam("seed", inp.value); };
+        inp.oninput = ()=> onParam("seed", inp.value);
+        params.seed = inp.value; els.seed = inp;
+        row.append(lb, inp, b); box.appendChild(row);
+        continue;
+      }
+      const row = document.createElement("div"); row.className = "row";
+      const lb = document.createElement("label"); lb.textContent = it.label; row.appendChild(lb);
+      if(it.type === "range"){
+        const inp = document.createElement("input"); inp.type = "range";
+        inp.min = it.min; inp.max = it.max; inp.step = it.step; inp.value = it.value;
+        const val = document.createElement("span"); val.className = "val";
+        val.textContent = it.value + (it.unit ? " " + it.unit : "");
+        inp.oninput = ()=>{ val.textContent = inp.value + (it.unit ? " " + it.unit : ""); onParam(it.id, parseFloat(inp.value)); };
+        params[it.id] = it.value; els[it.id] = inp;
+        row.append(inp, val);
+      } else if(it.type === "check"){
+        const inp = document.createElement("input"); inp.type = "checkbox"; inp.checked = !!it.value;
+        inp.onchange = ()=> onParam(it.id, inp.checked);
+        params[it.id] = !!it.value; els[it.id] = inp;
+        row.appendChild(inp);
+      } else if(it.type === "color"){
+        const inp = document.createElement("input"); inp.type = "color"; inp.value = it.value;
+        inp.oninput = ()=> onParam(it.id, inp.value);
+        params[it.id] = it.value; els[it.id] = inp;
+        row.appendChild(inp);
+      } else if(it.type === "select"){
+        const sel = document.createElement("select");
+        for(const [v,t] of it.options){ const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); }
+        sel.onchange = ()=> onParam(it.id, sel.value);
+        params[it.id] = sel.value; els[it.id] = sel;
+        row.appendChild(sel);
+      } else if(it.type === "textarea"){
+        row.style.flexDirection = "column"; row.style.alignItems = "stretch";
+        const ta = document.createElement("textarea"); ta.rows = it.rows; ta.value = it.value;
+        ta.oninput = ()=> onParam(it.id, ta.value);
+        params[it.id] = it.value; els[it.id] = ta;
+        row.appendChild(ta);
+      } else if(it.type === "images"){
+        row.style.flexWrap = "wrap";
+        const inp = document.createElement("input");
+        inp.type = "file"; inp.accept = "image/*"; inp.multiple = true; inp.style.fontSize = "11px"; inp.style.flex = "1";
+        inp.onchange = ()=> loadImages(inp.files);
+        const clr = document.createElement("button"); clr.textContent = "清除"; clr.style.marginLeft = "6px";
+        clr.onclick = ()=>{ userImages.forEach(u=> URL.revokeObjectURL(u.img.src)); userImages = []; imgVer++; inp.value = ""; hint.textContent = "未加载图片"; rebuild(); updateInfo(); };
+        const hint = document.createElement("div"); hint.className = "hint"; hint.style.width = "100%";
+        hint.textContent = "未加载图片";
+        els.imgHint = hint;
+        row.append(inp, clr, hint);
+      } else if(it.type === "file"){
+        const inp = document.createElement("input"); inp.type = "file"; inp.accept = it.accept; inp.style.fontSize = "11px";
+        inp.onchange = ()=> loadFont(inp.files[0]);
+        row.appendChild(inp);
+      } else if(it.type === "num"){
+        const inp = document.createElement("input"); inp.type = "text"; inp.value = it.value; inp.style.width = "70px"; inp.style.flex = "none";
+        inp.onchange = ()=>{ const v = Math.max(16, parseInt(inp.value)||it.value); inp.value = v; onParam(it.id, v); };
+        params[it.id] = it.value; els[it.id] = inp;
+        row.appendChild(inp);
+      }
+      box.appendChild(row);
+    }
+    panel.appendChild(box);
+  }
+}
+
+function onParam(id, val){
+  params[id] = val;
+  if(LAYOUT_KEYS.includes(id)) rebuild();
+  updateInfo();
+}
+
+function loadImages(files){
+  if(!files || !files.length) return;
+  let pending = files.length, added = 0;
+  const done = ()=>{
+    if(--pending) return;
+    imgVer++; rebuild(); updateInfo();
+    if(els.imgHint) els.imgHint.textContent = "已加载 " + userImages.length + " 张图片";
+    if(added) toast("已加入 " + added + " 张图片，与文字共用排版与运动逻辑");
+  };
+  for(const file of files){
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      const img = new Image();
+      img.onload = ()=>{
+        userImages.push({ img, dataURL: reader.result, aspect: img.naturalWidth / Math.max(1, img.naturalHeight) });
+        added++; done();
+      };
+      img.onerror = done;
+      img.src = reader.result;
+    };
+    reader.onerror = done;
+    reader.readAsDataURL(file);
+  }
+}
+
+async function loadFont(file){
+  if(!file) return;
+  try{
+    const buf = await file.arrayBuffer();
+    const name = "user-" + file.name.replace(/\.[^.]+$/,"").replace(/[^\w-]/g,"_");
+    const face = new FontFace(name, buf);
+    await face.load();
+    document.fonts.add(face);
+    const sel = els.fontFamily;
+    const o = document.createElement("option"); o.value = name; o.textContent = "已上传: " + file.name;
+    sel.appendChild(o); sel.value = name;
+    onParam("fontFamily", name);
+    toast("字体已加载: " + file.name);
+  }catch(e){ toast("字体加载失败: " + e.message); }
+}
+
+function tokenize(text, rnd){
+  const raw = text.match(/[A-Za-z0-9]+(?:[.,'’\-][A-Za-z0-9]+)*\.?|[一-鿿]+|[^\sA-Za-z0-9一-鿿]/g) || [];
+  const out = [];
+  let i = 0;
+  const pushTok = t => {
+    if(out.length && /^[^\sA-Za-z0-9一-鿿]$/.test(t)) out[out.length-1] += t;
+    else out.push(t);
+  };
+  while(i < raw.length){
+    const tk = raw[i];
+    if(/^[一-鿿]+$/.test(tk)){
+      let rest = tk;
+      while(rest.length){
+        const n = Math.min(rest.length, 1 + Math.floor(rnd()*3));
+        out.push(rest.slice(0,n)); rest = rest.slice(n);
+      }
+      i++;
+    } else if(/^[A-Za-z0-9]/.test(tk)){
+      const grp = [tk]; i++;
+      const target = rnd() < 0.45 ? 2 : (rnd() < 0.3 ? 3 : 1);
+      while(grp.length < target && i < raw.length && /^[A-Za-z0-9]/.test(raw[i]) && rnd() < 0.75){
+        grp.push(raw[i]); i++;
+      }
+      pushTok(grp.join(" "));
+    } else { pushTok(tk); i++; }
+  }
+  return out;
+}
+
+function fontStr(sizePx){
+  return (params.italic ? "italic " : "") + params.fontWeight + " " + sizePx + "px " + params.fontFamily;
+}
+
+function rebuild(){
+  const sig = JSON.stringify(LAYOUT_KEYS.map(k=>params[k])) + "|" + imgVer;
+  if(sig === layoutSig) return;
+  layoutSig = sig;
+  const rnd = mulberry32(hashSeed(params.seed));
+  const toks = tokenize(params.text, rnd);
+  const mctx = document.createElement("canvas").getContext("2d");
+  const textSegs = toks.map(tk=>{
+    const size = params.baseSize * (1 + (rnd()*2-1) * params.sizeVar/100 * 0.9);
+    mctx.font = fontStr(size);
+    const w = mctx.measureText(tk).width;
+    return { text: tk, size, w, h: size * 1.15, pos: [] };
+  });
+  const imgSegs = [];
+  for(let i=0;i<params.imgCount && userImages.length;i++){
+    const u = i < userImages.length ? userImages[i] : userImages[Math.floor(rnd()*userImages.length)];
+    const h = params.imgSize * Math.max(0.15, 1 + (rnd()*2-1) * params.imgRand/100);
+    imgSegs.push({ isImage: true, img: u.img, dataURL: u.dataURL, text: "", w: h * u.aspect, h, pos: [] });
+  }
+  segments = textSegs;
+  for(const im of imgSegs){
+    segments.splice(Math.floor(rnd() * (segments.length + 1)), 0, im);
+  }
+  const cols = params.gridCols, rows = params.gridRows;
+  const mx = W_REF*0.08, my = H_REF*0.08;
+  const gw = (W_REF - 2*mx)/cols, gh = (H_REF - 2*my)/rows;
+  const n = Math.max(1, segments.length);
+  const jitter = 0.15 + params.loose/100 * 0.75;
+  const clampSeg = (s, p) => {
+    const hw = s.w/2 / W_REF + 0.015, hh = s.h/2 / H_REF + 0.012;
+    p.x = Math.max(hw, Math.min(1 - hw, p.x));
+    p.y = Math.max(hh, Math.min(1 - hh, p.y));
+    return p;
+  };
+  segments.forEach((s, i)=>{
+    let cell = Math.floor(i/n * cols*rows) + Math.round((rnd()*2-1) * cols * params.loose/100 * 1.5);
+    cell = Math.max(0, Math.min(cols*rows-1, cell));
+    const c = cell % cols, r = Math.floor(cell / cols);
+    s.pos[0] = clampSeg(s, {
+      x: (mx + c*gw + gw/2 + (rnd()*2-1)*gw*jitter) / W_REF,
+      y: (my + r*gh + gh/2 + (rnd()*2-1)*gh*jitter*0.7) / H_REF
+    });
+  });
+  const M = params.midStates;
+  for(let k=1;k<=M;k++){
+    const ang = rnd()*Math.PI*2;
+    segments.forEach(s=>{
+      let x, y;
+      const sh = params.shape;
+      if(sh === "wide"){ x = 0.06 + rnd()*0.88; y = 0.3 + rnd()*0.4; }
+      else if(sh === "tall"){ x = 0.28 + rnd()*0.44; y = 0.05 + rnd()*0.9; }
+      else if(sh === "ring"){
+        const a = rnd()*Math.PI*2, rr = 0.26 + rnd()*0.16;
+        x = 0.5 + Math.cos(a)*rr*0.9; y = 0.5 + Math.sin(a)*rr*1.15;
+      } else { x = 0.06 + rnd()*0.88; y = 0.06 + rnd()*0.88; }
+      x += Math.cos(ang)*0.03*(rnd()*2-1); y += Math.sin(ang)*0.03*(rnd()*2-1);
+      s.pos[k] = clampSeg(s, { x, y });
+    });
+  }
+  blocks = [];
+  for(let i=0;i<params.blockCount;i++){
+    const c = Math.floor(rnd()*cols), r = Math.floor(rnd()*rows);
+    const wc = 1 + Math.floor(rnd()*3), hc = 1 + Math.floor(rnd()*2);
+    const role = params.blockRole === "mix" ? (rnd() < 0.5 ? "back" : "front") : params.blockRole;
+    const bx = (mx + c*gw + rnd()*gw*0.3) / W_REF;
+    const by = (my + r*gh + rnd()*gh*0.3) / H_REF;
+    const bw = gw*wc*0.94 / W_REF, bh = gh*hc*0.8 / H_REF;
+    const blk = {
+      w: bw,
+      h: bh,
+      role,
+      pos: [{ x: Math.min(bx, 0.995 - bw), y: Math.min(by, 0.995 - bh) }]
+    };
+    for(let k=1;k<=M;k++){
+      blk.pos[k] = {
+        x: 0.01 + rnd() * Math.max(0.01, 0.98 - bw),
+        y: 0.01 + rnd() * Math.max(0.01, 0.98 - bh)
+      };
+    }
+    blocks.push(blk);
+  }
+  updateInfo();
+}
+
+function stateCount(){ return 1 + params.midStates; }
+
+function cycleLocal(t){
+  const S = stateCount(), T = params.cycle;
+  const tt = ((t % T) + T) % T;
+  const slot = T / S;
+  const k = Math.min(S-1, Math.floor(tt / slot));
+  return { k, k2: (k+1) % S, local: (tt - k*slot) / slot };
+}
+
+function interpPos(A, B, local, applyShrink){
+  const holdF = params.hold / 100;
+  let x = A.x, y = A.y, sc = 1;
+  if(local >= holdF){
+    const u = (local - holdF) / Math.max(1e-6, 1 - holdF);
+    const e = u < 0.5 ? 4*u*u*u : 1 - Math.pow(-2*u+2,3)/2;
+    x = A.x + (B.x - A.x)*e; y = A.y + (B.y - A.y)*e;
+    const dx = B.x - A.x, dy = B.y - A.y;
+    const d = Math.hypot(dx, dy) || 1e-6;
+    const bend = Math.sin(Math.PI*u) * params.curve/100 * d * 0.45;
+    x += (-dy/d) * bend; y += (dx/d) * bend;
+    if(applyShrink) sc = 1 - Math.sin(Math.PI*u) * params.shrink/100 * 0.75;
+  }
+  return { x, y, sc };
+}
+
+function sampleAt(t){
+  const { k, k2, local } = cycleLocal(t);
+  return segments.map(s => interpPos(s.pos[k], s.pos[k2], local, true));
+}
+
+function sampleBlocksAt(t){
+  const { k, k2, local } = cycleLocal(t);
+  return blocks.map(b => interpPos(b.pos[k], b.pos[k2], local, false));
+}
+
+function hexLum(hex){
+  const m = hex.replace("#","");
+  const r = parseInt(m.slice(0,2),16)/255, g = parseInt(m.slice(2,4),16)/255, b = parseInt(m.slice(4,6),16)/255;
+  return 0.2126*r + 0.7152*g + 0.0722*b;
+}
+
+function makeGrain(){
+  const c = document.createElement("canvas"); c.width = c.height = 140;
+  const g = c.getContext("2d");
+  const img = g.createImageData(140,140);
+  for(let i=0;i<img.data.length;i+=4){
+    const v = 90 + Math.random()*110;
+    img.data[i]=img.data[i+1]=img.data[i+2]=v;
+    img.data[i+3]=38;
+  }
+  g.putImageData(img,0,0);
+  return c;
+}
+const grainTile = makeGrain();
+
+function convexHull(pts){
+  if(pts.length < 3) return pts.slice();
+  const p = pts.slice().sort((a,b)=> a.x-b.x || a.y-b.y);
+  const cross = (o,a,b)=> (a.x-o.x)*(b.y-o.y) - (a.y-o.y)*(b.x-o.x);
+  const lower = [];
+  for(const pt of p){ while(lower.length>=2 && cross(lower[lower.length-2], lower[lower.length-1], pt) <= 0) lower.pop(); lower.push(pt); }
+  const upper = [];
+  for(let i=p.length-1;i>=0;i--){ const pt=p[i]; while(upper.length>=2 && cross(upper[upper.length-2], upper[upper.length-1], pt) <= 0) upper.pop(); upper.push(pt); }
+  lower.pop(); upper.pop();
+  return lower.concat(upper);
+}
+
+function starOutline(pts, bins=22){
+  let cx=0, cy=0;
+  for(const p of pts){ cx+=p.x; cy+=p.y; }
+  cx/=pts.length; cy/=pts.length;
+  const best = new Array(bins).fill(null);
+  for(const p of pts){
+    const dx=p.x-cx, dy=p.y-cy;
+    const d=Math.hypot(dx,dy);
+    const b=Math.floor(((Math.atan2(dy,dx)+Math.PI)/(Math.PI*2))*bins) % bins;
+    if(!best[b] || d > best[b].d) best[b] = { x:p.x, y:p.y, d, b };
+  }
+  const out = best.filter(Boolean).sort((a,b)=> a.b-b.b);
+  return out.length >= 3 ? out : convexHull(pts);
+}
+
+function offsetPoly(poly, d){
+  let cx=0, cy=0;
+  for(const p of poly){ cx+=p.x; cy+=p.y; }
+  cx/=poly.length; cy/=poly.length;
+  return poly.map(p=>{
+    const dx=p.x-cx, dy=p.y-cy, l=Math.hypot(dx,dy)||1e-6;
+    return { x:p.x + dx/l*d, y:p.y + dy/l*d };
+  });
+}
+
+function trailAlpha(gIdx){
+  const ageFrac = gIdx / Math.max(1, params.trailN);
+  const holdF = params.holdKeep / 100;
+  const keep = ageFrac <= holdF ? 1 : Math.max(0, 1 - (ageFrac - holdF) / Math.max(1e-6, 1 - holdF));
+  return params.trailOp/100 * keep;
+}
+
+function blockUnder(bpts, px, py){
+  if(params.hideBlocks) return null;
+  for(let i=0;i<blocks.length;i++){
+    const b = blocks[i], p = bpts[i];
+    if(b.role === "back" && px >= p.x && px <= p.x+b.w && py >= p.y && py <= p.y+b.h) return b;
+  }
+  return null;
+}
+
+function textColorFor(seg, px, py, bpts){
+  const overBlock = blockUnder(bpts, px, py);
+  if(params.autoContrast){
+    const behind = overBlock ? params.blockColor : params.bg;
+    return hexLum(behind) < 0.45 ? "#ffffff" : "#111111";
+  }
+  if(overBlock) return params.onBlock;
+  return params.fg;
+}
+
+function drawSeg(c, s, x, y, scale, W, H, color, alpha){
+  const k = (W / W_REF) * scale;
+  c.save();
+  c.globalAlpha = alpha;
+  if(s.isImage){
+    c.drawImage(s.img, x - s.w*k/2, y - s.h*k/2, s.w*k, s.h*k);
+  } else {
+    c.font = fontStr(s.size * k);
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillStyle = color;
+    c.fillText(s.text, x, y);
+  }
+  c.restore();
+}
+
+function render(c, W, H, t){
+  c.save();
+  c.clearRect(0,0,W,H);
+  c.fillStyle = params.bg; c.fillRect(0,0,W,H);
+  if(params.grain > 0){
+    if(!grainPattern) grainPattern = c.createPattern(grainTile, "repeat");
+    c.save(); c.globalAlpha = params.grain/100 * 0.5; c.fillStyle = grainPattern; c.fillRect(0,0,W,H); c.restore();
+  }
+  const k = W / W_REF;
+  const pts = sampleAt(t);
+  const bpts = sampleBlocksAt(t);
+  if(!params.hideBlocks){
+    c.fillStyle = params.blockColor;
+    blocks.forEach((b, i)=>{
+      if(b.role === "back") c.fillRect(bpts[i].x*W, bpts[i].y*H, b.w*W, b.h*H);
+    });
+  }
+  const fx = params.fxOn;
+  if(fx && params.link){
+    c.save();
+    c.strokeStyle = params.structColor; c.globalAlpha = 0.55;
+    c.lineWidth = Math.max(0.5, params.structLW * k);
+    c.beginPath();
+    pts.forEach((p,i)=>{ const x=p.x*W, y=p.y*H; i ? c.lineTo(x,y) : c.moveTo(x,y); });
+    c.stroke(); c.restore();
+  }
+  if(fx && params.hull && segments.length >= 3){
+    const corners = [];
+    segments.forEach((s,i)=>{
+      const p = pts[i], w2 = s.w*k*p.sc/2 + params.boxPad*k, h2 = s.h*k*p.sc/2 + params.boxPad*k;
+      const x = p.x*W, y = p.y*H;
+      corners.push({x:x-w2,y:y-h2},{x:x+w2,y:y-h2},{x:x-w2,y:y+h2},{x:x+w2,y:y+h2});
+    });
+    const hull = starOutline(corners);
+    if(hull.length >= 3){
+      const d1 = (params.boxPad + 10) * k, d2 = d1 + params.hullGap * k;
+      c.save();
+      c.strokeStyle = params.structColor; c.lineWidth = Math.max(0.5, params.structLW * k);
+      for(const d of [d1, d2]){
+        const off = offsetPoly(hull, d);
+        c.beginPath();
+        off.forEach((p,i)=> i ? c.lineTo(p.x,p.y) : c.moveTo(p.x,p.y));
+        c.closePath(); c.stroke();
+      }
+      c.restore();
+    }
+  }
+  if(fx && params.trail){
+    const T = params.cycle;
+    for(let gIdx = params.trailN; gIdx >= 1; gIdx--){
+      const gt = t - (gIdx / params.trailN) * params.trailStep;
+      const gpts = sampleAt(((gt % T) + T) % T);
+      const a = trailAlpha(gIdx);
+      if(a <= 0.01) continue;
+      segments.forEach((s,i)=>{
+        const p = gpts[i];
+        drawSeg(c, s, p.x*W, p.y*H, p.sc, W, H, params.trailColor, a);
+      });
+    }
+  }
+  segments.forEach((s,i)=>{
+    const p = pts[i];
+    const x = p.x*W, y = p.y*H;
+    const w = s.w*k*p.sc, h = s.h*k*p.sc;
+    if(fx && params.box){
+      const pad = params.boxPad * k;
+      if(params.boxFill){ c.fillStyle = params.boxFillColor; c.fillRect(x-w/2-pad, y-h/2-pad, w+pad*2, h+pad*2); }
+      c.strokeStyle = params.structColor; c.lineWidth = Math.max(0.5, params.structLW * k);
+      c.strokeRect(x-w/2-pad, y-h/2-pad, w+pad*2, h+pad*2);
+    }
+    drawSeg(c, s, x, y, p.sc, W, H, s.isImage ? null : textColorFor(s, p.x, p.y, bpts), 1);
+  });
+  if(!params.hideBlocks){
+    c.fillStyle = params.blockColor;
+    blocks.forEach((b, i)=>{
+      if(b.role === "front") c.fillRect(bpts[i].x*W, bpts[i].y*H, b.w*W, b.h*H);
+    });
+  }
+  c.restore();
+}
+
+function updateInfo(){
+  const imgN = userImages.length;
+  infoL.textContent = segments.length + " 个" + (imgN ? "文字/图片" : "文字") + "片段 · " + params.midStates + " 个中间状态";
+  infoR.textContent = params.expW + " × " + params.expH + " · " + params.seed;
+}
+
+function fitPreview(){
+  const stage = document.getElementById("stage");
+  const availW = stage.clientWidth - 60, availH = stage.clientHeight - 120;
+  const scale = Math.min(availW / W_REF, availH / H_REF);
+  cv.style.width = (W_REF*scale) + "px";
+  cv.style.height = (H_REF*scale) + "px";
+}
+
+function loop(ts){
+  if(lastTs === null) lastTs = ts;
+  const dt = (ts - lastTs) / 1000; lastTs = ts;
+  if(playing){
+    timeSec += dt;
+    timeline.value = Math.round((timeSec % params.cycle) / params.cycle * 1000);
+  }
+  render(ctx, cv.width, cv.height, timeSec);
+  requestAnimationFrame(loop);
+}
+
+function download(blob, name){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  a.click();
+  setTimeout(()=> URL.revokeObjectURL(a.href), 4000);
+}
+
+function renderOff(W, H, t){
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  render(c.getContext("2d"), W, H, t);
+  return c;
+}
+
+function escXml(s){
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function buildSVG(W, H, t){
+  const k = W / W_REF;
+  const pts = sampleAt(t);
+  const bpts = sampleBlocksAt(t);
+  const out = [];
+  out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`);
+  out.push(`<rect width="${W}" height="${H}" fill="${params.bg}"/>`);
+  if(!params.hideBlocks){
+    blocks.forEach((b, i)=>{
+      if(b.role === "back")
+        out.push(`<rect x="${(bpts[i].x*W).toFixed(1)}" y="${(bpts[i].y*H).toFixed(1)}" width="${(b.w*W).toFixed(1)}" height="${(b.h*H).toFixed(1)}" fill="${params.blockColor}"/>`);
+    });
+  }
+  const fx = params.fxOn;
+  if(fx && params.link){
+    const d = pts.map((p,i)=> (i?"L":"M") + (p.x*W).toFixed(1) + " " + (p.y*H).toFixed(1)).join(" ");
+    out.push(`<path d="${d}" fill="none" stroke="${params.structColor}" stroke-opacity="0.55" stroke-width="${(params.structLW*k).toFixed(2)}"/>`);
+  }
+  if(fx && params.hull && segments.length >= 3){
+    const corners = [];
+    segments.forEach((s,i)=>{
+      const p = pts[i], w2 = s.w*k*p.sc/2 + params.boxPad*k, h2 = s.h*k*p.sc/2 + params.boxPad*k;
+      const x = p.x*W, y = p.y*H;
+      corners.push({x:x-w2,y:y-h2},{x:x+w2,y:y-h2},{x:x-w2,y:y+h2},{x:x+w2,y:y+h2});
+    });
+    const hull = starOutline(corners);
+    if(hull.length >= 3){
+      const d1 = (params.boxPad + 10) * k, d2 = d1 + params.hullGap * k;
+      for(const d of [d1, d2]){
+        const off = offsetPoly(hull, d);
+        const dd = off.map((p,i)=> (i?"L":"M") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ") + " Z";
+        out.push(`<path d="${dd}" fill="none" stroke="${params.structColor}" stroke-width="${(params.structLW*k).toFixed(2)}"/>`);
+      }
+    }
+  }
+  const emitSeg = (s, x, y, sc, color, alpha)=>{
+    const kk = k * sc;
+    if(s.isImage){
+      out.push(`<image x="${(x - s.w*kk/2).toFixed(1)}" y="${(y - s.h*kk/2).toFixed(1)}" width="${(s.w*kk).toFixed(1)}" height="${(s.h*kk).toFixed(1)}" href="${s.dataURL}"${alpha<1?` opacity="${alpha.toFixed(3)}"`:""}/>`);
+      return;
+    }
+    const size = s.size * kk;
+    const fam = params.fontFamily.split(",")[0].replace(/['"]/g,"").trim();
+    out.push(`<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="${escXml(fam)}" font-size="${size.toFixed(1)}" font-weight="${params.fontWeight}"${params.italic?' font-style="italic"':""} text-anchor="middle" dominant-baseline="central" fill="${color}"${alpha<1?` fill-opacity="${alpha.toFixed(3)}"`:""}>${escXml(s.text)}</text>`);
+  };
+  if(fx && params.trail){
+    const T = params.cycle;
+    for(let gIdx = params.trailN; gIdx >= 1; gIdx--){
+      const gpts = sampleAt((((t - (gIdx / params.trailN) * params.trailStep) % T) + T) % T);
+      const a = trailAlpha(gIdx);
+      if(a <= 0.01) continue;
+      segments.forEach((s,i)=> emitSeg(s, gpts[i].x*W, gpts[i].y*H, gpts[i].sc, params.trailColor, a));
+    }
+  }
+  segments.forEach((s,i)=>{
+    const p = pts[i], x = p.x*W, y = p.y*H;
+    const w = s.w*k*p.sc, h = s.h*k*p.sc;
+    if(fx && params.box){
+      const pad = params.boxPad*k;
+      const fill = params.boxFill ? params.boxFillColor : "none";
+      out.push(`<rect x="${(x-w/2-pad).toFixed(1)}" y="${(y-h/2-pad).toFixed(1)}" width="${(w+pad*2).toFixed(1)}" height="${(h+pad*2).toFixed(1)}" fill="${fill}" stroke="${params.structColor}" stroke-width="${(params.structLW*k).toFixed(2)}"/>`);
+    }
+    emitSeg(s, x, y, p.sc, s.isImage ? null : textColorFor(s, p.x, p.y, bpts), 1);
+  });
+  if(!params.hideBlocks){
+    blocks.forEach((b, i)=>{
+      if(b.role === "front")
+        out.push(`<rect x="${(bpts[i].x*W).toFixed(1)}" y="${(bpts[i].y*H).toFixed(1)}" width="${(b.w*W).toFixed(1)}" height="${(b.h*H).toFixed(1)}" fill="${params.blockColor}"/>`);
+    });
+  }
+  out.push("</svg>");
+  return out.join("\n");
+}
+
+function recordVideo(mimeList){
+  if(typeof MediaRecorder === "undefined"){ toast("当前浏览器不支持 MediaRecorder"); return; }
+  const mime = mimeList.find(m => MediaRecorder.isTypeSupported(m));
+  if(!mime){
+    toast("当前浏览器不支持该格式编码，已尝试回退均失败；请用 MP4 或 PNG 序列");
+    return;
+  }
+  const ext = mime.includes("quicktime") ? "mov" : (mime.includes("mp4") ? "mp4" : "webm");
+  const W = params.expW, H = params.expH, T = params.cycle;
+  const oc = document.createElement("canvas"); oc.width = W; oc.height = H;
+  const octx = oc.getContext("2d");
+  const stream = oc.captureStream(30);
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 16_000_000 });
+  const chunks = [];
+  rec.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+  rec.onstop = ()=>{
+    download(new Blob(chunks, { type: mime }), "grid-text-" + params.seed + "." + ext);
+    toast("导出完成（." + ext + "）");
+  };
+  render(octx, W, H, 0);
+  rec.start(200);
+  toast("正在按 " + W + "×" + H + " 录制一个完整循环（" + T + "s）…", T*1000);
+  const t0 = performance.now();
+  (function tick(){
+    const el = (performance.now() - t0) / 1000;
+    if(el >= T){ rec.stop(); return; }
+    render(octx, W, H, el);
+    requestAnimationFrame(tick);
+  })();
+}
+
+async function exportGIF(btn){
+  if(typeof GIF === "undefined"){ toast("gif.js 未加载（需联网）"); return; }
+  btn.disabled = true;
+  try{
+    toast("正在准备 GIF 编码器…");
+    const workerCode = await (await fetch("https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js")).text();
+    const workerURL = URL.createObjectURL(new Blob([workerCode], { type:"application/javascript" }));
+    const fps = 12, scale = 0.4;
+    const W = Math.round(params.expW * scale), H = Math.round(params.expH * scale);
+    const frames = Math.round(params.cycle * fps);
+    const gif = new GIF({ workers: 2, quality: 10, width: W, height: H, workerScript: workerURL });
+    for(let i=0;i<frames;i++){
+      const c = renderOff(W, H, i/fps);
+      gif.addFrame(c, { delay: Math.round(1000/fps), copy: true });
+      if(i % 6 === 0){ toast("GIF 采样 " + i + "/" + frames); await new Promise(r=>setTimeout(r)); }
+    }
+    gif.on("finished", blob => { download(blob, "grid-text-" + params.seed + ".gif"); toast("GIF 导出完成"); btn.disabled = false; });
+    gif.on("progress", p => toast("GIF 编码 " + Math.round(p*100) + "%"));
+    gif.render();
+  }catch(e){ toast("GIF 导出失败: " + e.message); btn.disabled = false; }
+}
+
+async function exportSeq(btn){
+  if(typeof JSZip === "undefined"){ toast("JSZip 未加载（需联网）"); return; }
+  btn.disabled = true;
+  try{
+    const fps = 12, frames = Math.round(params.cycle * fps);
+    const zip = new JSZip();
+    for(let i=0;i<frames;i++){
+      const c = renderOff(params.expW, params.expH, i/fps);
+      const blob = await new Promise(r=> c.toBlob(r, "image/png"));
+      zip.file("frame_" + String(i).padStart(4,"0") + ".png", blob);
+      if(i % 5 === 0){ toast("PNG 序列 " + i + "/" + frames); await new Promise(r=>setTimeout(r)); }
+    }
+    const blob = await zip.generateAsync({ type:"blob" });
+    download(blob, "grid-text-seq-" + params.seed + ".zip");
+    toast("PNG 序列导出完成");
+  }catch(e){ toast("PNG 序列导出失败: " + e.message); }
+  btn.disabled = false;
+}
+
+function doExport(kind, btn){
+  const W = params.expW, H = params.expH;
+  if(kind === "png"){
+    renderOff(W, H, timeSec).toBlob(b => { download(b, "grid-text-" + params.seed + ".png"); toast("PNG 已导出"); });
+  } else if(kind === "svg"){
+    const svg = buildSVG(W, H, timeSec);
+    download(new Blob([svg], { type:"image/svg+xml" }), "grid-text-" + params.seed + ".svg");
+    toast("SVG 已导出（当前帧静态矢量）");
+  } else if(kind === "gif"){ exportGIF(btn); }
+  else if(kind === "mp4"){
+    recordVideo(["video/mp4;codecs=avc1.42E01E","video/mp4","video/webm;codecs=h264","video/webm"]);
+  } else if(kind === "mov"){
+    recordVideo(["video/quicktime","video/mp4;codecs=avc1.42E01E","video/mp4","video/webm"]);
+  } else if(kind === "seq"){ exportSeq(btn); }
+}
+
+buildPanel();
+cv.width = W_REF; cv.height = H_REF;
+rebuild();
+fitPreview();
+updateInfo();
+window.addEventListener("resize", fitPreview);
+
+document.getElementById("btnPlay").onclick = e => { playing = !playing; e.target.textContent = playing ? "⏸" : "▶"; };
+document.getElementById("btnRestart").onclick = ()=> { timeSec = 0; timeline.value = 0; };
+timeline.oninput = ()=> { timeSec = timeline.value/1000 * params.cycle; playing = false; document.getElementById("btnPlay").textContent = "▶"; };
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
